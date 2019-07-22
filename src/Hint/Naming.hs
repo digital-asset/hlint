@@ -88,7 +88,7 @@ shorten (L locDecl (ValD ttg0 bind@(PatBind _ _ grhss@(GRHSs _ rhss _) _))) =
 shorten x = x
 
 shortenMatch :: LMatch GhcPs (LHsExpr GhcPs) -> LMatch GhcPs (LHsExpr GhcPs)
-shortenMatch (L locMatch match@(Match _ _ _ grhss@(GRHSs _ rhss _))) =
+shortenMatch (L locMatch match@(Match _ _ _ _ grhss@(GRHSs _ rhss _))) =
     L locMatch match {m_grhss = grhss {grhssGRHSs = map shortenLGRHS rhss}}
 shortenMatch x = x
 
