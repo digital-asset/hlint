@@ -1,0 +1,26 @@
+trigger:
+  batch: false
+  branches:
+    include:
+    - da-master
+
+# Enable PR triggers that target the da-master branch
+pr:
+  autoCancel: true # cancel previous builds on push
+  branches:
+    include:
+    - da-master
+
+strategy:
+  matrix:
+    linux:   {image: "Ubuntu 16.04"}
+    windows: {image: "vs2017-win2016"}
+    mac:     {image: "macOS-10.13"}
+
+pool: {vmImage: '$(image)'}
+
+steps:
+  - script: |
+      curl -sSL https://get.haskellstack.org/ | sh
+      stack setup > /dev/null
+      stack runghc -- CI.hs --package extra
