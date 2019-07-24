@@ -1,4 +1,4 @@
-# HLint [![Hackage version](https://img.shields.io/hackage/v/hlint.svg?label=Hackage)](https://hackage.haskell.org/package/hlint) [![Stackage version](https://www.stackage.org/package/hlint/badge/nightly?label=Stackage)](https://www.stackage.org/package/hlint) [![Linux build status](https://img.shields.io/travis/ndmitchell/hlint/master.svg?label=Linux%20build)](https://travis-ci.org/ndmitchell/hlint) [![Windows build status](https://img.shields.io/appveyor/ci/ndmitchell/hlint/master.svg?label=Windows%20build)](https://ci.appveyor.com/project/ndmitchell/hlint)
+# HLint [![Build Status](https://dev.azure.com/digitalasset/hlint/_apis/build/status/digital-asset.hlint?branchName=da-master)](https://dev.azure.com/digitalasset/hlint/_build/latest?definitionId=20&branchName=da-master)
 
 HLint is a tool for suggesting possible improvements to Haskell code. These suggestions include ideas such as using alternative functions, simplifying code and spotting redundancies. This document is structured as follows:
 
