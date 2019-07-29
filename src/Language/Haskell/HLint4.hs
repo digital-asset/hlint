@@ -19,7 +19,7 @@ module Language.Haskell.HLint4(
     -- * Settings
     Classify(..),
     getHLintDataDir, autoSettings, argsSettings,
-    findSettings, readSettingsFile, readFilesConfig,
+    findSettings, readSettingsFile, readFilesConfig, splitSettings,
     -- * Hints
     Hint, resolveHints,
     -- * Parse files
