@@ -1,5 +1,6 @@
 {-# LANGUAGE PackageImports #-}
 {-# LANGUAGE TypeFamilies, NamedFieldPuns #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
 
 module GHC.Util (
@@ -13,11 +14,13 @@ module GHC.Util (
   , Located
   , readExtension
   , commentText, isCommentMultiline
-  , declName
+  , declName, modName
   , unsafePrettyPrint
   , eqMaybe
   , noloc, unloc, getloc, noext
   , isForD
+  , W(..)
+  , SrcSpanD(..)
   -- Temporary : Export these so GHC doesn't consider them unused and
   -- tell weeder to ignore them.
   , isAtom, addParen, paren, isApp, isOpApp, isAnyApp, isDot, isSection, isDotApp
@@ -43,11 +46,14 @@ import "ghc-lib-parser" Panic
 import "ghc-lib-parser" HscTypes
 import "ghc-lib-parser" HeaderInfo
 import "ghc-lib-parser" ApiAnnotation
+import "ghc-lib-parser" Module
 
 import Data.List.Extra
+import Data.Function
 import System.FilePath
 import Language.Preprocessor.Unlit
 import qualified Data.Map.Strict as Map
+import Data.Default
 
 fakeSettings :: Settings
 fakeSettings = Settings
@@ -241,20 +247,31 @@ isCommentMultiline :: Located AnnotationComment -> Bool
 isCommentMultiline (L _ (AnnBlockComment _)) = True
 isCommentMultiline _ = False
 
-declName :: HsDecl GhcPs -> String
-declName (TyClD _ FamDecl{tcdFam=FamilyDecl{fdLName}}) = occNameString $ occName $ unLoc fdLName
-declName (TyClD _ SynDecl{tcdLName}) = occNameString $ occName $ unLoc tcdLName
-declName (TyClD _ DataDecl{tcdLName}) = occNameString $ occName $ unLoc tcdLName
-declName (TyClD _ ClassDecl{tcdLName}) = occNameString $ occName $ unLoc tcdLName
-declName (ValD _ FunBind{fun_id})  = occNameString $ occName $ unLoc fun_id
-declName (ValD _ VarBind{var_id})  = occNameString $ occName var_id
-declName (ValD _ (PatSynBind _ PSB{psb_id})) = occNameString $ occName $ unLoc psb_id
-declName (SigD _ (TypeSig _ (x:_) _)) = occNameString $ occName $ unLoc x
-declName (SigD _ (PatSynSig _ (x:_) _)) = occNameString $ occName $ unLoc x
-declName (SigD _ (ClassOpSig _ _ (x:_) _)) = occNameString $ occName $ unLoc x
-declName (ForD _ ForeignImport{fd_name}) = occNameString $ occName $ unLoc fd_name
-declName (ForD _ ForeignExport{fd_name}) = occNameString $ occName $ unLoc fd_name
-declName _ = ""
+-- | @declName x@ returns the \"new name\" that is created (for
+-- example a function declaration) by @x@.  If @x@ isn't a declaration
+-- that creates a new name (for example an instance declaration),
+-- 'Nothing' is returned instead.  This is useful because we don't
+-- want to tell users to rename binders that they aren't creating
+-- right now and therefore usually cannot change.
+declName :: HsDecl GhcPs -> Maybe String
+declName x = occNameString . occName <$> case x of
+    TyClD _ FamDecl{tcdFam=FamilyDecl{fdLName}} -> Just $ unLoc fdLName
+    TyClD _ SynDecl{tcdLName} -> Just $ unLoc tcdLName
+    TyClD _ DataDecl{tcdLName} -> Just $ unLoc tcdLName
+    TyClD _ ClassDecl{tcdLName} -> Just $ unLoc tcdLName
+    ValD _ FunBind{fun_id}  -> Just $ unLoc fun_id
+    ValD _ VarBind{var_id}  -> Just var_id
+    ValD _ (PatSynBind _ PSB{psb_id}) -> Just $ unLoc psb_id
+    SigD _ (TypeSig _ (x:_) _) -> Just $ unLoc x
+    SigD _ (PatSynSig _ (x:_) _) -> Just $ unLoc x
+    SigD _ (ClassOpSig _ _ (x:_) _) -> Just $ unLoc x
+    ForD _ ForeignImport{fd_name} -> Just $ unLoc fd_name
+    ForD _ ForeignExport{fd_name} -> Just $ unLoc fd_name
+    _ -> Nothing
+
+modName :: HsModule GhcPs -> String
+modName HsModule {hsmodName=Nothing} = "Main"
+modName HsModule {hsmodName=Just (L _ n)} = moduleNameString n
 
 -- \"Unsafely\" in this case means that it uses the following
 -- 'DynFlags' for printing -
@@ -288,3 +305,19 @@ getloc = getLoc
 
 noext :: NoExt
 noext = noExt
+
+newtype SrcSpanD = SrcSpanD SrcSpan deriving (Outputable, Eq, Ord)
+instance Default SrcSpanD where def = SrcSpanD noSrcSpan
+
+newtype W a = W a deriving Outputable -- Wrapper of terms.
+-- The issue is that at times, terms we work with in this program are
+-- not in `Eq` and `Ord` and we need them to be. This work-around
+-- resorts to implementing `Eq` and `Ord` for the these types via
+-- lexicographical comparisons of string representations. As long as
+-- two different terms never map to the same string representation,
+-- basing `Eq` and `Ord` on their string representations rather than
+-- the term types themselves, leads to identical results.
+wToStr :: Outputable a => W a -> String
+wToStr (W e) = showPpr baseDynFlags e
+instance Outputable a => Eq (W a) where (==) a b = wToStr a == wToStr b
+instance Outputable a => Ord (W a) where compare = compare `on` wToStr
