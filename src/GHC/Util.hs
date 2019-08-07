@@ -21,9 +21,10 @@ module GHC.Util (
   , isForD
   , W(..)
   , SrcSpanD(..)
-  -- Temporary : Export these so GHC doesn't consider them unused and
-  -- tell weeder to ignore them.
-  , isAtom, addParen, paren, isApp, isOpApp, isAnyApp, isDot, isSection, isDotApp
+  , isDot, isDol
+   -- Temporary : Export these so GHC doesn't consider them unused and
+   -- tell weeder to ignore them.
+  , isAtom, addParen, paren, isApp, isOpApp, isAnyApp, isSection, isDotApp
   ) where
 
 import "ghc-lib-parser" HsSyn
@@ -192,10 +193,13 @@ isAnyApp x = isApp x || isOpApp x
 
 -- | 'isDot e'  if 'e' is the unqualifed variable '.'.
 isDot :: HsExpr GhcPs -> Bool
-isDot x
-  | HsVar _ (L _ ident) <- x
-    , ident == mkVarUnqual (fsLit ".") = True
-  | otherwise                          = False
+isDot (HsVar _ (L _ ident)) = ident == mkVarUnqual (fsLit ".")
+isDot _ = False
+
+-- | 'isDol e'  if 'e' is the unqualifed variable '$'.
+isDol :: HsExpr GhcPs -> Bool
+isDol (HsVar _ (L _ ident)) = ident == mkVarUnqual (fsLit "$")
+isDol _ = False
 
 -- | 'isSection e' if 'e' is a section.
 isSection :: HsExpr GhcPs -> Bool
