@@ -343,10 +343,24 @@
 
     - warn: {lhs: bimap id g, rhs: second g}
     - warn: {lhs: bimap f id, rhs: first f}
+    - warn: {lhs: first id, rhs: id}
+    - warn: {lhs: second id, rhs: id}
+    - warn: {lhs: bimap id id, rhs: id}
+    - warn: {lhs: first f (second g x), rhs: bimap f g x}
+    - warn: {lhs: second g (first f x), rhs: bimap f g x}
+    - warn: {lhs: first f1 (first f2 x), rhs: first (f1 . f2) x}
+    - warn: {lhs: second g1 (second g2 x), rhs: second (g1 . g2) x}
+    - warn: {lhs: bimap f1 f2 (bimap g1 g2 x), rhs: bimap (f1 . f2) (g1 . g2) x}
+    - warn: {lhs: first f1 (bimap f2 g x), rhs: bimap (f1 . f2) g x}
+    - warn: {lhs: second g1 (bimap f g2 x), rhs: bimap f (g1 . g2) x}
+    - warn: {lhs: bimap f1 g (first f2 x), rhs: bimap (f1 . f2) g x}
+    - warn: {lhs: bimap f g1 (second g2 x), rhs: bimap f (g1 . g2) x}
     - hint: {lhs: "\\(x,y) -> (f x, g y)", rhs: Data.Bifunctor.bimap f g, note: IncreasesLaziness}
     - hint: {lhs: "\\(x,y) -> (f x,y)", rhs: Data.Bifunctor.first f, note: IncreasesLaziness}
     - hint: {lhs: "\\(x,y) -> (x,f y)", rhs: Data.Bifunctor.second f, note: IncreasesLaziness}
     - hint: {lhs: "(f (fst x), g (snd x))", rhs: Data.Bifunctor.bimap f g x}
+    - hint: {lhs: "(f (fst x), snd x)", rhs: Data.Bifunctor.first f x}
+    - hint: {lhs: "(fst x, g (snd x))", rhs: Data.Bifunctor.second g x}
 
     # FUNCTOR
 
@@ -493,8 +507,10 @@
     - warn: {lhs: "maybe [] (:[])", rhs: maybeToList}
     - warn: {lhs: catMaybes (map f x), rhs: mapMaybe f x}
     - warn: {lhs: catMaybes (fmap f x), rhs: mapMaybe f x}
-    - hint: {lhs: case x of Nothing -> y; Just a -> a , rhs: Data.Maybe.fromMaybe y x, name: Replace case with fromMaybe}
-    - hint: {lhs: case x of Just a -> a; Nothing -> y, rhs: Data.Maybe.fromMaybe y x, name: Replace case with fromMaybe}
+    - hint: {lhs: case x of Nothing -> y; Just a -> a , rhs: Data.Maybe.fromMaybe y x, side: isAtom y, name: Replace case with fromMaybe}
+    - hint: {lhs: case x of Just a -> a; Nothing -> y, rhs: Data.Maybe.fromMaybe y x, side: isAtom y, name: Replace case with fromMaybe}
+    - hint: {lhs: case x of Nothing -> y; Just a -> f a , rhs: maybe y f x, side: isAtom y && isAtom f, name: Replace case with maybe}
+    - hint: {lhs: case x of Just a -> f a; Nothing -> y, rhs: maybe y f x, side: isAtom y && isAtom f, name: Replace case with maybe}
     - warn: {lhs: if isNothing x then y else f (fromJust x), rhs: maybe y f x}
     - warn: {lhs: if isJust x then f (fromJust x) else y, rhs: maybe y f x}
     - warn: {lhs: maybe Nothing (Just . f), rhs: fmap f}
@@ -867,7 +883,7 @@
 # yes x = case x of {True -> a ; False -> b} -- if x then a else b
 # yes x = case x of {False -> a ; _ -> b} -- if x then b else a
 # no = const . ok . toResponse $ "saved"
-# yes = case x z of Nothing -> y z; Just pat -> pat -- Data.Maybe.fromMaybe (y z) (x z)
+# yes = case x z of Nothing -> y; Just pat -> pat -- Data.Maybe.fromMaybe y (x z)
 # yes = if p then s else return () -- Control.Monad.when p s
 # warn = a $$$$ b $$$$ c ==> a . b $$$$$ c
 # yes = when (not . null $ asdf) -- unless (null asdf)

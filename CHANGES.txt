@@ -1,5 +1,7 @@
 Changelog for HLint (* = breaking change)
 
+    Slightly restrict the replace case with fromMaybe hint
+    #701, add hints for replacing case with maybe
     #724, suggest Data.Bifunctor in some places
     #725, allow custom message for restricted items
 2.2.2, released 2019-07-23
