@@ -1,6 +1,6 @@
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE PackageImports #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-
     Suggest the use of camelCase
 
@@ -42,7 +42,8 @@ foreign import ccall hexml_node_child :: IO ()
 
 module Hint.Naming(namingHint) where
 
-import Hint.Type (Idea, DeclHint', suggest', transformBi, isSym, toSrcSpan', ghcModule)
+import Hint.Type (Idea,DeclHint',suggest',isSym,toSrcSpan',ghcModule)
+import Data.Generics.Uniplate.Operations
 import Data.List.Extra (nubOrd, isPrefixOf)
 import Data.Data
 import Data.Char
@@ -50,7 +51,6 @@ import Data.Maybe
 import Refact.Types hiding (RType(Match))
 import qualified Data.Set as Set
 
-import GHC.Util
 import "ghc-lib-parser" BasicTypes
 import "ghc-lib-parser" FastString
 import "ghc-lib-parser" HsDecls
@@ -58,6 +58,8 @@ import "ghc-lib-parser" HsExtension
 import "ghc-lib-parser" HsSyn
 import "ghc-lib-parser" OccName
 import "ghc-lib-parser" SrcLoc
+
+import GHC.Util
 
 namingHint :: DeclHint'
 namingHint _ modu = naming $ Set.fromList $ concatMap getNames $ hsmodDecls $ unLoc (ghcModule modu)
@@ -73,7 +75,7 @@ naming seen originalDecl =
     where
         suggestedNames =
             [ (originalName, suggestedName)
-            | not $ isForD $ unloc originalDecl
+            | not $ isForD' $ unLoc originalDecl
             , originalName <- nubOrd $ getNames originalDecl
             , Just suggestedName <- [suggestName originalName]
             , not $ suggestedName `Set.member` seen
@@ -81,28 +83,27 @@ naming seen originalDecl =
         replacedDecl = replaceNames suggestedNames originalDecl
 
 shorten :: LHsDecl GhcPs -> LHsDecl GhcPs
-shorten (L locDecl (ValD ttg0 bind@(FunBind _ _ matchGroup@(MG _ (L locMatches matches) _) _ _))) =
-    L locDecl (ValD ttg0 bind {fun_matches = matchGroup {mg_alts = L locMatches $ map shortenMatch matches}})
-shorten (L locDecl (ValD ttg0 bind@(PatBind _ _ grhss@(GRHSs _ rhss _) _))) =
-    L locDecl (ValD ttg0 bind {pat_rhs = grhss {grhssGRHSs = map shortenLGRHS rhss}})
+shorten (LL locDecl (ValD ttg0 bind@(FunBind _ _ matchGroup@(MG _ (LL locMatches matches) _) _ _))) =
+    LL locDecl (ValD ttg0 bind {fun_matches = matchGroup {mg_alts = LL locMatches $ map shortenMatch matches}})
+shorten (LL locDecl (ValD ttg0 bind@(PatBind _ _ grhss@(GRHSs _ rhss _) _))) =
+    LL locDecl (ValD ttg0 bind {pat_rhs = grhss {grhssGRHSs = map shortenLGRHS rhss}})
 shorten x = x
 
 shortenMatch :: LMatch GhcPs (LHsExpr GhcPs) -> LMatch GhcPs (LHsExpr GhcPs)
-shortenMatch (L locMatch match@(Match _ _ _ _ grhss@(GRHSs _ rhss _))) =
-    L locMatch match {m_grhss = grhss {grhssGRHSs = map shortenLGRHS rhss}}
+shortenMatch (LL locMatch match@(Match _ _ _ _ grhss@(GRHSs _ rhss _))) =
+    LL locMatch match {m_grhss = grhss {grhssGRHSs = map shortenLGRHS rhss}}
 shortenMatch x = x
 
 shortenLGRHS :: LGRHS GhcPs (LHsExpr GhcPs) -> LGRHS GhcPs (LHsExpr GhcPs)
-shortenLGRHS (L locGRHS (GRHS ttg0 guards (L locExpr _))) =
-    L locGRHS (GRHS ttg0 guards (L locExpr dots))
+shortenLGRHS (LL locGRHS (GRHS ttg0 guards (LL locExpr _))) =
+    LL locGRHS (GRHS ttg0 guards (cL locExpr dots))
     where
         dots :: HsExpr GhcPs
         dots = HsLit NoExt (HsString (SourceText "...") (mkFastString "..."))
 shortenLGRHS x = x
 
 getNames :: LHsDecl GhcPs -> [String]
-
-getNames (L _ decl) = maybeToList (declName decl) ++ getConstructorNames decl
+getNames (LL _ decl) = maybeToList (declName decl) ++ getConstructorNames decl
 
 getConstructorNames :: HsDecl GhcPs -> [String]
 getConstructorNames (TyClD _ (DataDecl _ _ _ _ (HsDataDefn _ _ _ _ _ cons _))) =

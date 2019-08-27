@@ -40,31 +40,32 @@ import IO as X -- import System.IO as X; import System.IO.Error as X; import Con
 
 module Hint.Import(importHint) where
 
-import Control.Applicative
-import Data.Tuple.Extra
-import Hint.Type
+import Hint.Type(ModuHint,ModuleEx(..),Idea(..),Severity(..),suggest',toSS',rawIdea',rawIdeaN')
 import Refact.Types hiding (ModuleName)
 import qualified Refact.Types as R
+import Data.Tuple.Extra
 import Data.List.Extra
+import Data.Generics.Uniplate.Operations
 import Data.Maybe
+import Control.Applicative
 import Prelude
 
 import "ghc-lib-parser" FastString
 import "ghc-lib-parser" BasicTypes
 import "ghc-lib-parser" RdrName
 import "ghc-lib-parser" Module
-import "ghc-lib-parser" HsSyn as GHC
-import qualified "ghc-lib-parser" SrcLoc as GHC
+import "ghc-lib-parser" HsSyn
+import "ghc-lib-parser" SrcLoc
 import GHC.Util
 
 importHint :: ModuHint
-importHint _ ModuleEx {ghcModule=GHC.L _ HsModule{hsmodImports=ms}} =
+importHint _ ModuleEx {ghcModule=L _ HsModule{hsmodImports=ms}} =
   -- Ideas for combining multiple imports.
   concatMap (reduceImports . snd) (
     groupSort [((n, pkg), i) | i <- ms
-              , not $ ideclSource (unloc i)
-              , let i' = unloc i
-              , let n = unloc $ ideclName i'
+              , not $ ideclSource (unLoc i)
+              , let i' = unLoc i
+              , let n = unLoc $ ideclName i'
               , let pkg  = unpackFS . sl_fs <$> ideclPkgQual i']) ++
   -- Ideas for removing redundant 'as' clauses.
   concatMap stripRedundantAlias ms ++
@@ -74,8 +75,7 @@ importHint _ ModuleEx {ghcModule=GHC.L _ HsModule{hsmodImports=ms}} =
 
 reduceImports :: [LImportDecl GhcPs] -> [Idea]
 reduceImports ms =
-  [rawIdea Hint.Type.Warning "Use fewer imports"
-    (ghcSpanToHSE (getloc $ head ms)) (f ms) (Just $ f x) [] rs
+  [rawIdea' Hint.Type.Warning "Use fewer imports" (getLoc $ head ms) (f ms) (Just $ f x) [] rs
   | Just (x, rs) <- [simplify ms]]
   where f = unlines . map unsafePrettyPrint
 
@@ -97,7 +97,7 @@ simplifyHead x [] = Nothing
 combine :: LImportDecl GhcPs
         -> LImportDecl GhcPs
         -> Maybe (LImportDecl GhcPs, [Refactoring R.SrcSpan])
-combine x@(GHC.L _ x') y@(GHC.L _ y')
+combine x@(LL _ x') y@(LL _ y')
   -- Both (un/)qualified, common 'as', same names : Delete the second.
   | qual, as, specs = Just (x, [Delete Import (toSS' y)])
     -- Both (un/)qualified, common 'as', different names : Merge the
@@ -105,8 +105,8 @@ combine x@(GHC.L _ x') y@(GHC.L _ y')
   | qual, as
   , Just (False, xs) <- ideclHiding x'
   , Just (False, ys) <- ideclHiding y' =
-      let newImp = noloc x'{ideclHiding = Just (False, noloc (unloc xs ++ unloc ys))}
-      in Just (newImp, [Replace Import (toSS' x) [] (unsafePrettyPrint (unloc newImp))
+      let newImp = noLoc x'{ideclHiding = Just (False, noLoc (unLoc xs ++ unLoc ys))}
+      in Just (newImp, [Replace Import (toSS' x) [] (unsafePrettyPrint (unLoc newImp))
                        , Delete Import (toSS' y)])
   -- Both (un/qualified), common 'as', one has names the other doesn't
   -- : Delete the one with names.
@@ -121,44 +121,49 @@ combine x@(GHC.L _ x') y@(GHC.L _ y')
   -- No hints.
   | otherwise = Nothing
     where
+        eqMaybe:: Eq a => Maybe (Located a) -> Maybe (Located a) -> Bool
+        eqMaybe (Just x) (Just y) = x `eqLocated` y
+        eqMaybe Nothing Nothing = True
+        eqMaybe _ _ = False
+
         qual = ideclQualified x' == ideclQualified y'
-        as = ideclAs x' `GHC.Util.eqMaybe` ideclAs y'
+        as = ideclAs x' `eqMaybe` ideclAs y'
         ass = mapMaybe ideclAs [x', y']
         specs = transformBi (const noSrcSpan) (ideclHiding x') ==
                     transformBi (const noSrcSpan) (ideclHiding y')
 
 stripRedundantAlias :: LImportDecl GhcPs -> [Idea]
-stripRedundantAlias x@(GHC.L loc i@GHC.ImportDecl {..})
+stripRedundantAlias x@(LL loc i@ImportDecl {..})
   -- Suggest 'import M as M' be just 'import M'.
-  | Just (unloc ideclName) == fmap unloc ideclAs =
-      [suggest' "Redundant as" x (GHC.L loc i{ideclAs=Nothing}) [RemoveAsKeyword (toSS' x)]]
+  | Just (unLoc ideclName) == fmap unLoc ideclAs =
+      [suggest' "Redundant as" x (cL loc i{ideclAs=Nothing}) [RemoveAsKeyword (toSS' x)]]
 stripRedundantAlias _ = []
 
 preferHierarchicalImports :: LImportDecl GhcPs -> [Idea]
-preferHierarchicalImports x@(GHC.L loc i@GHC.ImportDecl{ideclName=(GHC.L _ n),ideclPkgQual=Nothing})
+preferHierarchicalImports x@(LL loc i@ImportDecl{ideclName=L _ n,ideclPkgQual=Nothing})
   -- Suggest 'import IO' be rewritten 'import System.IO, import
   -- System.IO.Error, import Control.Exception(bracket, bracket_)'.
   | n == mkModuleName "IO" && isNothing (ideclHiding i) =
-      [rawIdeaN Suggestion "Use hierarchical imports" (ghcSpanToHSE loc)
+      [rawIdeaN' Suggestion "Use hierarchical imports" loc
       (trimStart $ unsafePrettyPrint i) (
           Just $ unlines $ map (trimStart . unsafePrettyPrint)
           [ f "System.IO" Nothing, f "System.IO.Error" Nothing
-          , f "Control.Exception" $ Just (False, noloc [mkLIE x | x <- ["bracket","bracket_"]])]) []]
+          , f "Control.Exception" $ Just (False, noLoc [mkLIE x | x <- ["bracket","bracket_"]])]) []]
   -- Suggest that a module import like 'Monad' should be rewritten with
   -- its hiearchical equivalent e.g. 'Control.Monad'.
   | Just y <- lookup (moduleNameString n) newNames =
     let newModuleName = y ++ "." ++ moduleNameString n
         r = [Replace R.ModuleName (toSS' x) [] newModuleName] in
     [suggest' "Use hierarchical imports"
-     x (noloc (desugarQual i){ideclName=noloc (mkModuleName newModuleName)}) r]
+     x (noLoc (desugarQual i){ideclName=noLoc (mkModuleName newModuleName)}) r]
   where
     -- Substitute a new module name.
-    f a b = (desugarQual i){ideclName=noloc (mkModuleName a), ideclHiding=b}
+    f a b = (desugarQual i){ideclName=noLoc (mkModuleName a), ideclHiding=b}
     -- Wrap a literal name into an 'IE' (import/export) value.
     mkLIE :: String -> LIE GhcPs
-    mkLIE n = noloc $ IEVar noext (noloc (IEName (noloc (mkVarUnqual (fsLit n)))))
+    mkLIE n = noLoc $ IEVar noExt (noLoc (IEName (noLoc (mkVarUnqual (fsLit n)))))
     -- Rewrite 'import qualified X' as 'import qualified X as X'.
-    desugarQual :: GHC.ImportDecl GhcPs -> GHC.ImportDecl GhcPs
+    desugarQual :: ImportDecl GhcPs -> ImportDecl GhcPs
     desugarQual i
       | ideclQualified i && isNothing (ideclAs i) = i{ideclAs = Just (ideclName i)}
       | otherwise = i
