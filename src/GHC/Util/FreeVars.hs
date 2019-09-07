@@ -20,10 +20,12 @@ import "ghc-lib-parser" Bag (bagToList)
 
 import Data.Generics.Uniplate.Data ()
 import Data.Generics.Uniplate.Operations
-import Data.Monoid (Monoid(..))
-import Data.Semigroup (Semigroup(..))
+import Data.Monoid
+import Data.Semigroup
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Prelude
+
 
 ( ^+ ) :: Set OccName -> Set OccName -> Set OccName
 ( ^+ ) = Set.union
@@ -239,6 +241,8 @@ instance AllVars' (LGRHS GhcPs (LHsExpr GhcPs)) where
 
 instance AllVars' (LHsDecl GhcPs) where
   allVars' (dL -> L l (ValD _ bind)) = allVars' (cL l bind :: LHsBind GhcPs)
+
+  allVars' _ = mempty  -- We only consider value bindings.
 
 --
 
