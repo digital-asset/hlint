@@ -6,6 +6,10 @@ import "ghc-lib-parser" HsSyn
 import "ghc-lib-parser" SrcLoc
 import "ghc-lib-parser" BasicTypes
 
+import "ghc-lib-parser" Module
+import "ghc-lib-parser" RdrName
+import "ghc-lib-parser" OccName
+
 class Brackets' a where
   remParen' :: a -> Maybe a -- Remove one paren or nothing if there is no paren.
   addParen' :: a -> a -- Write out a paren.
@@ -22,6 +26,14 @@ isOpApp' (LL _ OpApp{}) = True; isOpApp' _ = False
 isAnyApp' x = isApp' x || isOpApp' x
 isSection' (LL _ SectionL{}) = True; isSection' (LL _ SectionR{}) = True; isSection' _ = False
 
+
+-- mod_records :: ModuleName
+mod_records = mkModuleName "DA.Internal.Record"
+var_getField = mkRdrQual mod_records $ mkVarOcc "getField"
+var_setField = mkRdrQual mod_records $ mkVarOcc "setField"
+var_getFieldPrim = mkRdrQual mod_records $ mkVarOcc "getFieldPrim"
+var_setFieldPrim = mkRdrQual mod_records $ mkVarOcc "setFieldPrim"
+
 instance Brackets' (LHsExpr GhcPs) where
   -- When GHC parses a section in concrete syntax, it will produce an
   -- 'HsPar (Section[L|R])'. There is no concrete syntax that will
@@ -30,6 +42,10 @@ instance Brackets' (LHsExpr GhcPs) where
   -- paren's surrounding a section - they are required.
   remParen' (LL _ (HsPar _ (LL _ SectionL{}))) = Nothing
   remParen' (LL _ (HsPar _ (LL _ SectionR{}))) = Nothing
+
+  remParen' (LL _ (HsPar _ (LL _ (HsApp _ (LL _ (HsAppType _ (LL _ (HsVar _ (L _ x))) _)) _))))
+    | x `elem` [var_getField, var_setField, var_getFieldPrim, var_setFieldPrim]  = Nothing
+
   remParen' (LL _ (HsPar _ x)) = Just x
   remParen' _ = Nothing
 
