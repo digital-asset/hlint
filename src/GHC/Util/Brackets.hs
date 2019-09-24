@@ -1,15 +1,14 @@
-{-# LANGUAGE PackageImports #-}
 {-# LANGUAGE MultiParamTypeClasses , FlexibleInstances, FlexibleContexts #-}
 module GHC.Util.Brackets (Brackets'(..), isApp',isOpApp',isAnyApp',isSection') where
 
-import "ghc-lib-parser" HsSyn
-import "ghc-lib-parser" SrcLoc
-import "ghc-lib-parser" BasicTypes
+import HsSyn
+import SrcLoc
+import BasicTypes
 
 -- See note [DA 'HasField' expressions] later in this file.
-import "ghc-lib-parser" Module
-import "ghc-lib-parser" RdrName
-import "ghc-lib-parser" OccName
+import Module
+import RdrName
+import OccName
 
 class Brackets' a where
   remParen' :: a -> Maybe a -- Remove one paren or nothing if there is no paren.
