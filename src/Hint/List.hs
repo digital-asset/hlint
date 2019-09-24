@@ -68,7 +68,7 @@ listDecl x =
   concatMap listComp (universeBi x)
 
 listComp :: LHsExpr GhcPs -> [Idea]
-listComp o@(LL _ (HsDo _ ListComp (L _ stmts))) =
+listComp o@(LL _ (HsDo _ MonadComp (L _ stmts))) =
   let revs = reverse stmts
       e@(LL _ LastStmt{}) = head revs -- In a ListComp, this is always last.
       xs = reverse (tail revs) in
@@ -82,19 +82,19 @@ listComp o@(LL _ (HsDo _ ListComp (L _ stmts))) =
       where
         ys = moveGuardsForward xs
         o' = noLoc $ ExplicitList noExt Nothing []
-        o2 = noLoc $ HsDo noExt ListComp (noLoc (filter ((/= Just "True") . qualCon) xs ++ [e]))
-        o3 = noLoc $ HsDo noExt ListComp (noLoc $ ys ++ [e])
+        o2 = noLoc $ HsDo noExt MonadComp (noLoc (filter ((/= Just "True") . qualCon) xs ++ [e]))
+        o3 = noLoc $ HsDo noExt MonadComp (noLoc $ ys ++ [e])
         cons = mapMaybe qualCon xs
         qualCon :: ExprLStmt GhcPs -> Maybe String
         qualCon (L _ (BodyStmt _ (LL _ (HsVar _ (L _ x))) _ _)) = Just (occNameString . rdrNameOcc $ x)
         qualCon _ = Nothing
-listComp o@(view' -> App2' mp f (LL _ (HsDo _ ListComp (L _ stmts)))) | varToStr' mp == "map" =
+listComp o@(view' -> App2' mp f (LL _ (HsDo _ MonadComp (L _ stmts)))) | varToStr' mp == "map" =
     [suggest' "Move map inside list comprehension" o o2 (suggestExpr o o2)]
     where
       revs = reverse stmts
       LL _ (LastStmt _ body b s) = head revs -- In a ListComp, this is always last.
       last = noLoc $ LastStmt noExt (noLoc $ HsApp noExt (paren' f) (paren' body)) b s
-      o2 =noLoc $ HsDo noExt ListComp (noLoc $ reverse (tail revs) ++ [last])
+      o2 =noLoc $ HsDo noExt MonadComp (noLoc $ reverse (tail revs) ++ [last])
 listComp _ = []
 
 suggestExpr :: LHsExpr GhcPs -> LHsExpr GhcPs -> [Refactoring R.SrcSpan]
