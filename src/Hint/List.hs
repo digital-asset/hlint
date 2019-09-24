@@ -56,7 +56,6 @@ import OccName
 import Name
 import FastString
 import TysWiredIn
-import Name
 
 import GHC.Util
 
