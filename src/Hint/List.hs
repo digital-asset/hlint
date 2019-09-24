@@ -30,6 +30,8 @@ foo = [x + 1 | x <- [1..10], let y = even x, y]
 foo = [x + 1 | x <- [1..10], let q = even 1, q] -- [x + 1 | let q = even 1, q, x <- [1..10]]
 foo = [fooValue | Foo{..} <- y, fooField]
 issue619 = [pkgJobs | Pkg{pkgGpd, pkgJobs} <- pkgs, not $ null $ C.condTestSuites pkgGpd]
+{-# LANGUAGE MonadComprehensions #-}\
+foo = [x | False, x <- [1 .. 10]] -- []
 </TEST>
 -}
 
@@ -51,6 +53,7 @@ import SrcLoc
 import BasicTypes
 import RdrName
 import OccName
+import Name
 import FastString
 import TysWiredIn
 import Name
@@ -66,6 +69,9 @@ listDecl x =
   stringType x ++
   concatMap listPat (childrenBi x) ++
   concatMap listComp (universeBi x)
+
+-- Refer to https://github.com/ndmitchell/hlint/issues/775 for the
+-- structure of 'listComp'.
 
 listComp :: LHsExpr GhcPs -> [Idea]
 listComp o@(LL _ (HsDo _ ListComp (L _ stmts))) =
