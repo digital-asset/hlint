@@ -3,7 +3,7 @@
 module GHC.Util.Pat (
     strToPat', patToStr'
   , Brackets'(..)
-  , fromPChar', isPFieldWildcard', hasPFieldsDotDot'
+  , fromPChar', isPFieldWildcard', hasPFieldsDotDot', isPWildCard'
   ) where
 
 import HsSyn
@@ -42,3 +42,7 @@ isPFieldWildcard' (LL _ HsRecField {hsRecFieldArg=(LL _ (WildPat _))}) = True
 isPFieldWildcard' (LL _ HsRecField {hsRecPun=True}) = True
 isPFieldWildcard' (LL _ HsRecField {}) = False
 isPFieldWildcard' _ = False -- {-# COMPLETE LL #-}
+
+isPWildCard' :: Pat GhcPs -> Bool
+isPWildCard' (LL _ (WildPat _)) = True
+isPWildCard' _ = False
