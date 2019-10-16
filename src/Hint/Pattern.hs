@@ -177,7 +177,7 @@ asPattern (LL loc x) = concatMap decl (universeBi x)
     decl _ = []
 
     match :: LMatch GhcPs (LHsExpr GhcPs) -> (Pattern, String -> Pattern -> [Refactoring R.SrcSpan] -> Idea)
-    match o@(LL loc (Match _ ctx pats grhss)) = (Pattern loc R.Match pats grhss, \msg (Pattern _ _ pats grhss) rs -> suggest' msg o (noLoc (Match noExt ctx  pats grhss) :: LMatch GhcPs (LHsExpr GhcPs)) rs)
+    match o@(LL loc (Match _ ctx pats rhssig grhss)) = (Pattern loc R.Match pats grhss, \msg (Pattern _ _ pats grhss) rs -> suggest' msg o (noLoc (Match noExt ctx pats rhssig grhss) :: LMatch GhcPs (LHsExpr GhcPs)) rs)
     match _ = undefined -- {-# COMPLETE LL #-}
 asPattern _ = [] -- {-# COMPLETE LL #-}
 
@@ -222,11 +222,11 @@ patHint _ _ o@(LL _ (AsPat _ v (LL _ (WildPat _)))) =
 patHint _ _ _ = []
 
 expHint :: LHsExpr GhcPs -> [Idea]
-expHint o@(LL _ (HsCase _ _ (MG _ (L _ [LL _ (Match _ CaseAlt [LL _ (WildPat _)] (GRHSs _ [LL _ (GRHS _ [] e)] (LL  _ (EmptyLocalBinds _)))) ]) _ ))) =
+expHint o@(LL _ (HsCase _ _ (MG _ (L _ [LL _ (Match _ CaseAlt [LL _ (WildPat _)] _ (GRHSs _ [LL _ (GRHS _ [] e)] (LL  _ (EmptyLocalBinds _)))) ]) _ ))) =
   [suggest' "Redundant case" o e [r]]
   where
     r = Replace Expr (toSS' o) [("x", toSS' e)] "x"
-expHint o@(LL _ (HsCase _ (LL _ (HsVar _ (L _ x))) (MG _ (L _ [LL _ (Match _ CaseAlt [LL _ (VarPat _ (L _ y))] (GRHSs _ [LL _ (GRHS _ [] e)] (LL  _ (EmptyLocalBinds _)))) ]) _ )))
+expHint o@(LL _ (HsCase _ (LL _ (HsVar _ (L _ x))) (MG _ (L _ [LL _ (Match _ CaseAlt [LL _ (VarPat _ (L _ y))] _ (GRHSs _ [LL _ (GRHS _ [] e)] (LL  _ (EmptyLocalBinds _)))) ]) _ )))
   | occNameString (rdrNameOcc x) == occNameString (rdrNameOcc y) =
       [suggest' "Redundant case" o e [r]]
   where
