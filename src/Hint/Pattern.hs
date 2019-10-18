@@ -18,7 +18,7 @@ foo x = yes x x where yes x y = if a then b else if c then d else e -- yes x y ;
 foo x | otherwise = y -- foo x = y
 foo x = x + x where -- foo x = x + x
 foo x | a = b | True = d -- foo x | a = b ; | otherwise = d
-foo (Bar _ _ _ _) = x -- Bar{}
+foo (Bar _ _ _ _) = x -- Bar with
 foo (Bar _ x _ _) = x
 foo (Bar _ _) = x
 foo = case f v of _ -> x -- x
@@ -55,7 +55,7 @@ foo x@Foo = x
 
 module Hint.Pattern(patternHint) where
 
-import Hint.Type(DeclHint',Idea,ghcAnnotations,ideaTo,toSS',toRefactSrcSpan,ghcSpanToHSE,suggest',warn')
+import Hint.Type(DeclHint',Idea,ghcAnnotations,ideaTo,toSS',toRefactSrcSpan,ghcSpanToHSE,suggest',warn',Severity(Suggestion),rawIdea)
 import Data.Generics.Uniplate.Operations
 import Data.Function
 import Data.List.Extra
@@ -185,12 +185,13 @@ asPattern _ = [] -- {-# COMPLETE LL #-}
 -- First Bool is if 'Strict' is a language extension. Second Bool is
 -- if this pattern in this context is going to be evaluated strictly.
 patHint :: Bool -> Bool -> Pat GhcPs -> [Idea]
-patHint _ _ o@(LL _ (ConPatIn name (PrefixCon args)))
+patHint _ _ o@(LL l (ConPatIn name@(L _ tag) (PrefixCon args)))
   | length args >= 3 && all isPWildCard' args =
   let rec_fields = HsRecFields [] Nothing :: HsRecFields GhcPs (Pat GhcPs)
       new        = ConPatIn name (RecCon rec_fields) :: Pat GhcPs
   in
-  [suggest' "Use record patterns" o new [Replace R.Pattern (toSS' o) [] (unsafePrettyPrint new)]]
+  -- Adapted for DAML (use 'with').
+  [rawIdea Suggestion "Use record patterns" (ghcSpanToHSE l) (unsafePrettyPrint o) (Just $ (occNameString (rdrNameOcc tag) ++ " with")) [] [Replace R.Pattern (toSS' o) [] (unsafePrettyPrint new)]]
 patHint _ _ o@(LL _ (VarPat _ (L _ name)))
   | occNameString (rdrNameOcc name) == "otherwise" =
     [warn' "Used otherwise as a pattern" o (noLoc (WildPat noExt) :: Pat GhcPs) []]
