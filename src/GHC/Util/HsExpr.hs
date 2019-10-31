@@ -245,12 +245,12 @@ replaceBranches' (LL s (HsCase _ a (MG _ (L l bs) FromSource))) =
   (concatMap f bs, \xs -> cL s (HsCase noExt a (MG noExt (cL l (g bs xs)) Generated)))
   where
     f :: LMatch GhcPs (LHsExpr GhcPs) -> [LHsExpr GhcPs]
-    f (LL _ (Match _ CaseAlt _ (GRHSs _ xs _))) = [x | (LL _ (GRHS _ _ x)) <- xs]
+    f (LL _ (Match _ CaseAlt _ _ (GRHSs _ xs _))) = [x | (LL _ (GRHS _ _ x)) <- xs]
     f _ = undefined -- {-# COMPLETE LL #-}
 
     g :: [LMatch GhcPs (LHsExpr GhcPs)] -> [LHsExpr GhcPs] -> [LMatch GhcPs (LHsExpr GhcPs)]
-    g (LL s1 (Match _ CaseAlt a (GRHSs _ ns b)) : rest) xs =
-      cL s1 (Match noExt CaseAlt a (GRHSs noExt [cL a (GRHS noExt gs x) | (LL a (GRHS _ gs _), x) <- zip ns as] b)) : g rest bs
+    g (LL s1 (Match _ CaseAlt a sig (GRHSs _ ns b)) : rest) xs =
+      cL s1 (Match noExt CaseAlt a sig (GRHSs noExt [cL a (GRHS noExt gs x) | (LL a (GRHS _ gs _), x) <- zip ns as] b)) : g rest bs
       where  (as, bs) = splitAt (length ns) xs
     g [] [] = []
     g _ _ = error "GHC.Util.HsExpr.replaceBranches': internal invariant failed, lists are of differing lengths"

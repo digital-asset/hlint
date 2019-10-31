@@ -30,7 +30,7 @@ data App2'  = NoApp2'  | App2' (LHsExpr GhcPs) (LHsExpr GhcPs) (LHsExpr GhcPs)
 data LamConst1' = NoLamConst1' | LamConst1' (LHsExpr GhcPs)
 
 instance View' (LHsExpr GhcPs) LamConst1' where
-  view' (fromParen' -> (LL _ (HsLam _ (MG _ (L _ [LL _ (Match _ LambdaExpr [LL _ WildPat {}]
+  view' (fromParen' -> (LL _ (HsLam _ (MG _ (L _ [LL _ (Match _ LambdaExpr [LL _ WildPat {}] _
     (GRHSs _ [LL _ (GRHS _ [] x)] (LL _ (EmptyLocalBinds _))))]) FromSource)))) = LamConst1' x
   view' _ = NoLamConst1'
 
