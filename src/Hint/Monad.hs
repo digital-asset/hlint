@@ -2,17 +2,17 @@
 {-
     Find and match:
 
-    mapM, foldM, forM, replicateM, sequence, zipWithM
+    mapA, foldA, forA, replicateA, sequence, zipWithA
     not at the last line of a do statement, or to the left of >>
 
     Use let x = y instead of x <- return y, unless x is contained
     within y, or bound more than once in that do block.
 
 <TEST>
-yes = do mapM print a; return b -- mapM_ print a
-yes = do _ <- mapM print a; return b -- mapM_ print a
-no = mapM print a
-no = do foo ; mapM print a
+yes = do mapA print a; return b -- mapA_ print a
+yes = do _ <- mapA print a; return b -- mapA_ print a
+no = mapA print a
+no = do foo ; mapA print a
 yes = do (bar+foo) -- (bar+foo)
 no = do bar ; foo
 yes = do bar; a <- foo; return a -- do bar; foo
@@ -31,21 +31,21 @@ yes = do x <- return y; foo x -- @Suggestion do let x = y; foo x
 yes = do x <- return $ y + z; foo x -- do let x = y + z; foo x
 no = do x <- return x; foo x
 no = do x <- return y; x <- return y; foo x
-yes = do forM files $ \x -> return (); return () -- forM_ files $ \x -> return ()
-yes = do if a then forM x y else return (); return 12 -- forM_ x y
-yes = do case a of {_ -> forM x y; x:xs -> foo xs}; return () -- forM_ x y
-foldM_ f a xs = foldM f a xs >> return ()
-folder f a xs = foldM f a xs >> return () -- foldM_ f a xs
-folder f a xs = foldM f a xs >>= \_ -> return () -- foldM_ f a xs
-yes = mapM async ds >>= mapM wait >> return () -- mapM async ds >>= mapM_ wait
+yes = do forA files $ \x -> return (); return () -- forA_ files $ \x -> return ()
+yes = do if a then forA x y else return (); return 12 -- forA_ x y
+yes = do case a of {_ -> forA x y; x:xs -> foo xs}; return () -- forA_ x y
+foldA_ f a xs = foldA f a xs >> return ()
+folder f a xs = foldA f a xs >> return () -- foldA_ f a xs
+folder f a xs = foldA f a xs >>= \_ -> return () -- foldA_ f a xs
+yes = mapA async ds >>= mapA wait >> return () -- mapA async ds >>= mapA_ wait
 main = "wait" ~> do f a $ sleep 10
 main = f $ do g a $ sleep 10 -- g a $ sleep 10
 main = do f a $ sleep 10 -- f a $ sleep 10
 main = do foo x; return 3; bar z -- do foo x; bar z
-main = void $ forM_ f xs -- forM_ f xs
-main = void $ forM f xs -- void $ forM_ f xs
-main = do _ <- forM_ f xs; bar -- forM_ f xs
-main = do bar; forM_ f xs; return () -- do bar; forM_ f xs
+main = void $ forA_ f xs -- forA_ f xs
+main = void $ forA f xs -- void $ forA_ f xs
+main = do _ <- forA_ f xs; bar -- forA_ f xs
+main = do bar; forA_ f xs; return () -- do bar; forA_ f xs
 main = do a; when b c; return () -- do a; when b c
 </TEST>
 -}
@@ -71,7 +71,7 @@ import Refact.Types hiding (Match)
 import qualified Refact.Types as R
 
 badFuncs :: [String]
-badFuncs = ["mapM","foldM","forM","replicateM","sequence","zipWithM","traverse","for","sequenceA"]
+badFuncs = ["mapA","foldA","forA","replicateA","sequence","zipWithA","traverse","for"]
 unitFuncs :: [String]
 unitFuncs = ["when","unless","void"]
 
