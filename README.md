@@ -177,7 +177,7 @@ HLint knows the fixities for all the operators in the base library, but no other
 
 ### Which hints are used?
 
-HLint uses the `hlint.yaml` file it ships with by default (containing things like the `concatMap` hint above), along with with the first `.hlint.yaml` file it finds in the current directory or any parent thereof. To include other hints, pass `--hint=filename.yaml`. If you pass any `--with` hint you will need to explicitly add any `--hint` flags required.
+HLint uses the `hlint.yaml` file it ships with by default (containing things like the `concatMap` hint above), along with the first `.hlint.yaml` file it finds in the current directory or any parent thereof. To include other hints, pass `--hint=filename.yaml`. If you pass any `--with` hint you will need to explicitly add any `--hint` flags required.
 
 ### Why do I sometimes get a "Note" with my hint?
 
@@ -215,6 +215,10 @@ In this case, a solution is to add the `:: String` type annotation.  For example
 ```
 
 See discussion in [issue #372](https://github.com/ndmitchell/hlint/issues/372).
+
+### Why do I get a parse error?
+
+HLint enables/disables a set of extensions designed to allow as many files to parse as possible, but sometimes you'll need to enable an additional extension (e.g. Arrows), or disable some (e.g. MagicHash) to enable your code to parse. In addition, sometimes the underlying parser library ([haskell-src-exts](https://github.com/haskell-suite/haskell-src-exts)) has a bug which causes a parse error.
 
 ## Customizing the hints
 

@@ -1,7 +1,7 @@
 cabal-version:      >= 1.18
 build-type:         Simple
 name:               hlint
-version:            2.2.3
+version:            2.2.5
 license:            BSD3
 license-file:       LICENSE
 category:           Development
@@ -58,7 +58,7 @@ library
         cpphs >= 1.20.1,
         cmdargs >= 0.10,
         yaml >= 0.5.0,
-        haskell-src-exts >= 1.21 && < 1.22,
+        haskell-src-exts >= 1.21 && < 1.23,
         haskell-src-exts-util >= 0.2.5,
         uniplate >= 1.5,
         ansi-terminal >= 0.6.2,
@@ -124,6 +124,9 @@ library
         GHC.Util.Language.Haskell.GHC.ExactPrint.Types
         GHC.Util.Refact.Utils
         GHC.Util.Refact.Fixity
+        GHC.Util.RdrName
+        GHC.Util.Scope
+        GHC.Util.Unify
 
         HSE.All
         HSE.Match

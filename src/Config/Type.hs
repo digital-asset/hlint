@@ -10,6 +10,8 @@ import Data.Char
 import Data.List.Extra
 import Prelude
 
+import qualified HsSyn
+import GHC.Util
 
 getSeverity :: String -> Maybe Severity
 getSeverity "ignore" = Just Ignore
@@ -85,8 +87,10 @@ data Classify = Classify
     }
     deriving Show
 
+
+
 -- | A @LHS ==> RHS@ style hint rule.
-data HintRule {- PUBLIC -} = HintRule
+data HintRule = HintRule
     {hintRuleSeverity :: Severity -- ^ Default severity for the hint.
     ,hintRuleName :: String -- ^ Name for the hint.
     ,hintRuleScope :: Scope -- ^ Module scope in which the hint operates.
@@ -94,6 +98,11 @@ data HintRule {- PUBLIC -} = HintRule
     ,hintRuleRHS :: Exp SrcSpanInfo -- ^ RHS
     ,hintRuleSide :: Maybe (Exp SrcSpanInfo) -- ^ Side condition, typically specified with @where _ = ...@.
     ,hintRuleNotes :: [Note] -- ^ Notes about application of the hint.
+    -- We wrap these GHC elements in 'W' in order that we may derive 'Show'.
+    ,hintRuleGhcScope :: W Scope' -- ^ Module scope in which the hint operates (GHC parse tree).
+    ,hintRuleGhcLHS :: W (HsSyn.LHsExpr HsSyn.GhcPs) -- ^ LHS (GHC parse tree).
+    ,hintRuleGhcRHS :: W (HsSyn.LHsExpr HsSyn.GhcPs) -- ^ RHS (GHC parse tree).
+    ,hintRuleGhcSide :: Maybe (W (HsSyn.LHsExpr HsSyn.GhcPs))  -- ^ Side condition (GHC parse tree).
     }
     deriving Show
 
