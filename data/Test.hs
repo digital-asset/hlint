@@ -46,7 +46,8 @@ error = before a ==> after a
 warn "noop" = a ? 0 ==> a
 
 {-
-<TEST>
+-- These tests not supported using ghc-lib.
+
 main = readFile "foo" >>= putStr            \
   -- bad
 
