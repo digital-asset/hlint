@@ -29,6 +29,10 @@ sort :: (?cmp :: a -> a -> Bool) => [a] -> [a] \
 sort !f = undefined
 {-# LANGUAGE KindSignatures #-} \
 data Set (cxt :: * -> *) a = Set [a]
+{-# LANGUAGE BangPatterns #-} \
+foo x = let !y = x in y
+{-# LANGUAGE BangPatterns #-} \
+data Foo = Foo !Int --
 {-# LANGUAGE RecordWildCards #-} \
 record field = Record{..}
 {-# LANGUAGE RecordWildCards #-} \
@@ -70,6 +74,8 @@ instance Class Int where {newtype MyIO a = MyIO a deriving NewClass}
 f :: Int -> (# Int, Int #)
 {-# LANGUAGE UnboxedTuples #-} \
 f :: x -> (x, x); f x = (x, x) --
+{-# LANGUAGE UnboxedTuples #-} \
+f x = case x of (# a, b #) -> a
 {-# LANGUAGE DefaultSignatures #-} \
 class Val a where; val :: a --
 {-# LANGUAGE DefaultSignatures #-} \
@@ -253,7 +259,11 @@ used EmptyCase = hasS f
     f (HsLamCase _ (MG _ (LL _ []) _)) = True
     f _ = False
 used KindSignatures = hasT (un :: HsKind GhcPs)
-used BangPatterns = hasS isPBangPat'
+used BangPatterns = hasS isPBangPat' ||^ hasS isStrictMatch
+  where
+    isStrictMatch :: HsMatchContext RdrName -> Bool
+    isStrictMatch FunRhs{mc_strictness=SrcStrict} = True
+    isStrictMatch _ = False
 used TemplateHaskell = hasT2' (un :: (HsBracket GhcPs, HsSplice GhcPs)) ||^ hasS f ||^ hasS isSpliceDecl'
     where
       f :: HsBracket GhcPs -> Bool
@@ -275,7 +285,12 @@ used PatternSignatures = hasS isPatTypeSig'
 used RecordWildCards = hasS hasFieldsDotDot' ||^ hasS hasPFieldsDotDot'
 used RecordPuns = hasS isPFieldPun' ||^ hasS isFieldPun'
 used NamedFieldPuns = hasS isPFieldPun' ||^ hasS isFieldPun'
-used UnboxedTuples = has isUnboxedTuple'
+used UnboxedTuples = has isUnboxedTuple' ||^ has (== Unboxed)
+used PackageImports = hasS f
+    where
+        f :: ImportDecl GhcPs -> Bool
+        f ImportDecl{ideclPkgQual=Just _} = True
+        f _ = False
 used QuasiQuotes = hasS isQuasiQuote' ||^ hasS isTyQuasiQuote'
 used ViewPatterns = hasS isPViewPat'
 used DefaultSignatures = hasS isClsDefSig'

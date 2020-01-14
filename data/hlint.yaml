@@ -164,6 +164,8 @@
     - hint: {lhs: 0 >= length x, rhs: null x, note: IncreasesLaziness}
     - hint: {lhs: "x == []", rhs: null x}
     - hint: {lhs: "[] == x", rhs: null x}
+    - hint: {lhs: all (const False), rhs: "null"}
+    - hint: {lhs: any (const True) x, rhs: not (null x), name: Use null}
     - hint: {lhs: length x /= 0, rhs: not (null x), note: IncreasesLaziness, name: Use null}
     - hint: {lhs: 0 /= length x, rhs: not (null x), note: IncreasesLaziness, name: Use null}
     - hint: {lhs: "\\x -> [x]", rhs: "(:[])", name: "Use :"}
@@ -276,6 +278,8 @@
     - hint: {lhs: "\\x y -> f (x,y)", rhs: curry f}
     - hint: {lhs: "\\(x,y) -> f x y", rhs: uncurry f, note: IncreasesLaziness}
     - warn: {lhs: f (fst p) (snd p), rhs: uncurry f p}
+    - warn: {lhs: uncurry (curry f), rhs: f}
+    - warn: {lhs: curry (uncurry f), rhs: f}
     - warn: {lhs: ($) . f, rhs: f, name: Redundant $}
     - warn: {lhs: (f $), rhs: f, name: Redundant $}
     - warn: {lhs: (Data.Function.& f), rhs: f, name: Redundant Data.Function.&}
@@ -349,13 +353,13 @@
     - warn: {lhs: bimap id id, rhs: id}
     - warn: {lhs: first f (second g x), rhs: bimap f g x}
     - warn: {lhs: second g (first f x), rhs: bimap f g x}
-    - warn: {lhs: first f1 (first f2 x), rhs: first (f1 . f2) x}
-    - warn: {lhs: second g1 (second g2 x), rhs: second (g1 . g2) x}
-    - warn: {lhs: bimap f1 f2 (bimap g1 g2 x), rhs: bimap (f1 . f2) (g1 . g2) x}
-    - warn: {lhs: first f1 (bimap f2 g x), rhs: bimap (f1 . f2) g x}
-    - warn: {lhs: second g1 (bimap f g2 x), rhs: bimap f (g1 . g2) x}
-    - warn: {lhs: bimap f1 g (first f2 x), rhs: bimap (f1 . f2) g x}
-    - warn: {lhs: bimap f g1 (second g2 x), rhs: bimap f (g1 . g2) x}
+    - warn: {lhs: first f (first g x), rhs: first (f . g) x}
+    - warn: {lhs: second f (second g x), rhs: second (f . g) x}
+    - warn: {lhs: bimap f h (bimap g i x), rhs: bimap (f . g) (h . i) x}
+    - warn: {lhs: first f (bimap g h x), rhs: bimap (f . g) h x}
+    - warn: {lhs: second g (bimap f h x), rhs: bimap f (g . h) x}
+    - warn: {lhs: bimap f h (first g x), rhs: bimap (f . g) h x}
+    - warn: {lhs: bimap f g (second h x), rhs: bimap f (g . h) x}
     - hint: {lhs: "\\(x,y) -> (f x, g y)", rhs: Data.Bifunctor.bimap f g, note: IncreasesLaziness}
     - hint: {lhs: "\\(x,y) -> (f x,y)", rhs: Data.Bifunctor.first f, note: IncreasesLaziness}
     - hint: {lhs: "\\(x,y) -> (x,f y)", rhs: Data.Bifunctor.second f, note: IncreasesLaziness}
@@ -412,6 +416,7 @@
     - hint: {lhs: flip forM, rhs: mapM}
     - hint: {lhs: flip forM_, rhs: mapM_}
     - warn: {lhs: when (not x), rhs: unless x}
+    - warn: {lhs: unless (not x), rhs: when x}
     - warn: {lhs: x >>= id, rhs: Control.Monad.join x}
     - warn: {lhs: id =<< x, rhs: Control.Monad.join x}
     - warn: {lhs: id =<< x, rhs: Control.Monad.join x}
@@ -677,6 +682,8 @@
     - warn: {lhs: "concat []", rhs: "[]", name: Evaluate}
     - warn: {lhs: "zip [] []", rhs: "[]", name: Evaluate}
     - warn: {lhs: const x y, rhs: x, name: Evaluate}
+    - warn: {lhs: any (const False), rhs: const False, note: IncreasesLaziness, name: Evaluate}
+    - warn: {lhs: all (const True), rhs: const True, note: IncreasesLaziness, name: Evaluate}
 
     # FOLDABLE + TUPLES
 
@@ -786,9 +793,17 @@
     - package base
     rules:
     - warn: {lhs: maybe mempty, rhs: foldMap}
+    - warn: {lhs: maybe False, rhs: any}
+    - warn: {lhs: maybe True, rhs: all}
     - warn: {lhs: either (const mempty), rhs: foldMap}
+    - warn: {lhs: either (const False), rhs: any}
+    - warn: {lhs: either (const True), rhs: all}
     - warn: {lhs: Data.Maybe.fromMaybe mempty, rhs: Data.Foldable.fold}
+    - warn: {lhs: Data.Maybe.fromMaybe False, rhs: or}
+    - warn: {lhs: Data.Maybe.fromMaybe True, rhs: and}
     - warn: {lhs: Data.Either.fromRight mempty, rhs: Data.Foldable.fold}
+    - warn: {lhs: Data.Either.fromRight False, rhs: or}
+    - warn: {lhs: Data.Either.fromRight True, rhs: and}
     - warn: {lhs: if f x then Just x else Nothing, rhs: mfilter f (Just x)}
     - hint: {lhs: maybe (pure ()), rhs: traverse_, note: IncreasesLaziness}
     - hint: {lhs: fromMaybe (pure ()), rhs: sequenceA_, note: IncreasesLaziness}
