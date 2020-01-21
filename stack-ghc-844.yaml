@@ -5,11 +5,11 @@ extra-deps:
   - haskell-src-exts-util-0.2.5
   - filepattern-0.1.1
   - archive: https://digitalassetsdk.bintray.com/ghc-lib/ghc-lib-parser-8.8.1.20191204.tar.gz
-  - github: shayne-fletcher/ghc-lib-parser-ex
-    commit: "5fe76338cb231d28b5f50d9dfbd10c9eb49b5b08"
-    sha256: "6d6ddc0b62c51a697812d8ebcd8d1aaeaaa875b0d91bce5972a5b364e83c2e9d"
+  - ghc-lib-parser-ex-8.8.1.20191204
 ghc-options:
     "$locals": -Wunused-imports -Worphans -Wunused-top-binds -Wincomplete-patterns
 flags:
   hlint:
+    ghc-lib: true
+  ghc-lib-parser-ex:
     ghc-lib: true
