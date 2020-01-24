@@ -22,7 +22,7 @@ strategy:
       image: "vs2017-win2016"
       stack-yaml: "stack-ghc-844.yaml"
     mac-ghc-lib-881-844:
-      image: "macOS-10.13"
+      image: "macOS-10.14"
       stack-yaml: "stack-ghc-844.yaml"
 
     linux-ghc-lib-881-865:
@@ -32,7 +32,7 @@ strategy:
       image: "vs2017-win2016"
       stack-yaml: "stack.yaml"
     mac-ghc-lib-881-865:
-      image: "macOS-10.13"
+      image: "macOS-10.14"
       stack-yaml: "stack.yaml"
 
 pool: {vmImage: '$(image)'}
