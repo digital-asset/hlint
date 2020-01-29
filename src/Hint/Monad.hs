@@ -39,6 +39,8 @@ folder f a xs = foldA f a xs >> return () -- foldA_ f a xs
 folder f a xs = foldA f a xs >>= \_ -> return () -- foldA_ f a xs
 yes = mapA async ds >>= mapA wait >> return () -- mapA async ds >>= mapA_ wait
 main = "wait" ~> do f a $ sleep 10
+main = print do 17 + 25
+main = print do 17 -- 17
 main = f $ do g a $ sleep 10 -- g a $ sleep 10
 main = do f a $ sleep 10 -- f a $ sleep 10
 main = do foo x; return 3; bar z -- do foo x; bar z
@@ -97,8 +99,10 @@ monadExp (declName -> decl) (parent, x) =
     seenVoid wrap x = monadNoResult (fromMaybe "" decl) wrap x ++ [warn' "Redundant void" (wrap x) x [] | returnsUnit x]
 
 -- Sometimes people write 'a * do a + b', to avoid brackets.
+-- or using BlockArguments they can write 'a do a b'
 doOperator :: (Eq a, Num a) => Maybe (a, LHsExpr GhcPs) -> LHsExpr GhcPs -> Bool
 doOperator (Just (2, LL _ (OpApp _ _ op _ )))  (LL _ OpApp {}) | not $ isDol' op = True
+doOperator (Just (1, LL _ HsApp{})) b | not $ isAtom' b = True
 doOperator _ _ = False
 
 returnsUnit :: LHsExpr GhcPs -> Bool

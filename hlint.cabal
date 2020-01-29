@@ -1,7 +1,7 @@
 cabal-version:      >= 1.18
 build-type:         Simple
 name:               hlint
-version:            2.2.7
+version:            2.2.9
 license:            BSD3
 license-file:       LICENSE
 category:           Development
@@ -121,7 +121,7 @@ library
         GHC.Util.Module
         GHC.Util.Outputable
         GHC.Util.SrcLoc
-        GHC.Util.W
+        GHC.Util.HsExtendInstances
         GHC.Util.DynFlags
         GHC.Util.RdrName
         GHC.Util.Scope

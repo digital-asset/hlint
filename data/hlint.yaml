@@ -144,16 +144,21 @@
     - warn: {lhs: "foldr (\\c a -> x : a) []", rhs: "map (\\c -> x)"}
     - warn: {lhs: span (not . p), rhs: break p}
     - warn: {lhs: break (not . p), rhs: span p}
-    - warn: {lhs: "(takeWhile p x, dropWhile p x)", rhs: span p x}
+    - warn: {lhs: "(takeWhile p x, dropWhile p x)", rhs: span p x, note: DecreasesLaziness}
     - warn: {lhs: fst (span p x), rhs: takeWhile p x}
     - warn: {lhs: snd (span p x), rhs: dropWhile p x}
     - warn: {lhs: fst (break p x), rhs: takeWhile (not . p) x}
     - warn: {lhs: snd (break p x), rhs: dropWhile (not . p) x}
+    - warn: {lhs: "(take n x, drop n x)", rhs: splitAt n x, note: DecreasesLaziness}
+    - warn: {lhs: fst (splitAt p x), rhs: take p x}
+    - warn: {lhs: snd (splitAt p x), rhs: drop p x}
     - warn: {lhs: concatMap (++ "\n"), rhs: unlines}
     - warn: {lhs: map id, rhs: id}
     - warn: {lhs: concatMap id, rhs: concat}
     - warn: {lhs: or (map p x), rhs: any p x}
     - warn: {lhs: and (map p x), rhs: all p x}
+    - warn: {lhs: any f (map g x), rhs: any (f . g) x}
+    - warn: {lhs: all f (map g x), rhs: all (f . g) x}
     - warn: {lhs: "zipWith (,)", rhs: zip}
     - warn: {lhs: "zipWith3 (,,)", rhs: zip3}
     - hint: {lhs: length x == 0, rhs: null x, note: IncreasesLaziness}
@@ -169,8 +174,7 @@
     - hint: {lhs: length x /= 0, rhs: not (null x), note: IncreasesLaziness, name: Use null}
     - hint: {lhs: 0 /= length x, rhs: not (null x), note: IncreasesLaziness, name: Use null}
     - hint: {lhs: "\\x -> [x]", rhs: "(:[])", name: "Use :"}
-    - warn: {lhs: map (uncurry f) (zip x y), rhs: zipWith f x y}
-    - hint: {lhs: map f (zip x y), rhs: zipWith (curry f) x y, side: isVar f}
+    - hint: {lhs: map f (zip x y), rhs: zipWith (curry f) x y, side: not (isApp f)}
     - warn: {lhs: not (elem x y), rhs: notElem x y}
     - hint: {lhs: foldr f z (map g x), rhs: foldr (f . g) z x, name: Fuse foldr/map}
     - warn: {lhs: "x ++ concatMap (' ':) y", rhs: "unwords (x:y)"}
@@ -182,6 +186,8 @@
     - warn: {lhs: "filter f x /= []", rhs: any f x}
     - warn: {lhs: any id, rhs: or}
     - warn: {lhs: all id, rhs: and}
+    - warn: {lhs: any (not . f) x, rhs: not (all f x), name: Hoist not}
+    - warn: {lhs: all (not . f) x, rhs: not (any f x), name: Hoist not}
     - warn: {lhs: any ((==) a), rhs: elem a, note: ValidInstance Eq a}
     - warn: {lhs: any (== a), rhs: elem a}
     - warn: {lhs: any (a ==), rhs: elem a, note: ValidInstance Eq a}
@@ -231,6 +237,10 @@
     - warn: {lhs: sequenceA_ (map f x), rhs: traverse_ f x}
     - warn: {lhs: sequenceA_ (fmap f x), rhs: traverse_ f x}
     - warn: {lhs: foldMap id, rhs: fold}
+    - warn: {lhs: fold (fmap f x), rhs: foldMap f x}
+    - warn: {lhs: fold (map f x), rhs: foldMap f x}
+    - warn: {lhs: foldMap f (fmap g x), rhs: foldMap (f . g) x}
+    - warn: {lhs: foldMap f (map g x), rhs: foldMap (f . g) x}
 
     # BY
 
@@ -880,7 +890,8 @@
 # yes = if foo then stuff else return () -- Control.Monad.when foo stuff
 # yes = foo $ \(a, b) -> (a, y + b) -- Data.Bifunctor.second ((+) y)
 # no  = foo $ \(a, b) -> (a, a + b)
-# yes = map (uncurry (+)) $ zip [1 .. 5] [6 .. 10] -- zipWith (+) [1 .. 5] [6 .. 10]
+# yes = map (uncurry (+)) $ zip [1 .. 5] [6 .. 10] -- zipWith (curry (uncurry (+))) [1 .. 5] [6 .. 10]
+# yes = curry (uncurry (+)) -- (+)
 # no = do iter <- textBufferGetTextIter tb ; textBufferSelectRange tb iter iter
 # no = flip f x $ \y -> y*y+y
 # no = \x -> f x (g x)
@@ -935,6 +946,9 @@
 # main = take (-y) x
 # main = take 4 x
 # main = let (first, rest) = (takeWhile p l, dropWhile p l) in rest -- span p l
+# main = let (first, rest) = (take n l, drop n l) in rest -- splitAt n l
+# main = fst (splitAt n l) -- take n l
+# main = snd $ splitAt n l -- drop n l
 # main = map $ \ d -> ([| $d |], [| $d |])
 # pairs (x:xs) = map (x,) xs ++ pairs xs
 # {-# ANN foo "HLint: ignore" #-};foo = map f (map g x) -- @Ignore ???
@@ -983,6 +997,8 @@
 # no = sequenceA (pure a)
 # {-# LANGUAGE QuasiQuotes #-}; no = f (\url -> [hamlet|foo @{url}|])
 # yes = f ((,) x) -- (x,)
+# instance Class X where method = map f (map g x) -- map (f . g) x
+# instance Eq X where x == y = compare x y == EQ
 
 # import Prelude \
 # yes = flip mapM -- Control.Monad.forM
