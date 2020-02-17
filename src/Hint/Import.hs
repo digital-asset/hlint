@@ -28,11 +28,11 @@ import A; import B; import A -- import A
 import qualified A; import A
 import B; import A; import A -- import A
 import A hiding(Foo); import A hiding(Bar)
-import List -- import Data.List
-import qualified List -- import qualified Data.List as List
-import Char(foo) -- import Data.Char(foo)
+import List -- import Data.List @NoRefactor: apply-refact bug
+import qualified List -- import qualified Data.List as List @NoRefactor
+import Char(foo) -- import Data.Char(foo) @NoRefactor
 import IO(foo)
-import IO as X -- import System.IO as X; import System.IO.Error as X; import Control.Exception  as X (bracket,bracket_)
+import IO as X -- import System.IO as X; import System.IO.Error as X; import Control.Exception  as X (bracket,bracket_) @NoRefactor
 </TEST>
 -}
 
@@ -73,8 +73,9 @@ importHint _ ModuleEx {ghcModule=L _ HsModule{hsmodImports=ms}} =
   concatMap preferHierarchicalImports ms
 
 reduceImports :: [LImportDecl GhcPs] -> [Idea]
-reduceImports ms =
-  [rawIdea' Hint.Type.Warning "Use fewer imports" (getLoc $ head ms) (f ms) (Just $ f x) [] rs
+reduceImports [] = []
+reduceImports ms@(m:_) =
+  [rawIdea' Hint.Type.Warning "Use fewer imports" (getLoc m) (f ms) (Just $ f x) [] rs
   | Just (x, rs) <- [simplify ms]]
   where f = unlines . map unsafePrettyPrint
 

@@ -5,6 +5,7 @@ module Report(writeReport) where
 import Idea
 import Data.Tuple.Extra
 import Data.List.Extra
+import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import Data.Version
 import HSE.All
@@ -26,7 +27,7 @@ writeReport :: FilePath -> FilePath -> [Idea] -> IO ()
 writeReport dataDir file ideas = timedIO "Report" file $ writeTemplate dataDir inner file
     where
         generateIds :: [String] -> [(String,Int)] -- sorted by name
-        generateIds = map (head &&& length) . group -- must be already sorted
+        generateIds = map (NE.head &&& length) . NE.group -- must be already sorted
         files = generateIds $ sort $ map (srcSpanFilename . ideaSpan) ideas
         hints = generateIds $ map hintName $ sortOn (negate . fromEnum . ideaSeverity &&& hintName) ideas
         hintName x = show (ideaSeverity x) ++ ": " ++ ideaHint x
@@ -43,7 +44,7 @@ writeReport dataDir file ideas = timedIO "Report" file $ writeTemplate dataDir i
         getClass i = "hint" ++ f hints (hintName i) ++ " file" ++ f files (srcSpanFilename $ ideaSpan i)
             where f xs x = show $ fromJust $ findIndex ((==) x . fst) xs
 
-        list mode = zipWith f [0..]
+        list mode = zipWithFrom f 0
             where
                 f i (name,n) = "<li><a id=" ++ show id ++ " href=\"javascript:show('" ++ id ++ "')\">" ++
                                escapeHTML name ++ " (" ++ show n ++ ")</a></li>"

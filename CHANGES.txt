@@ -1,5 +1,20 @@
 Changelog for HLint (* = breaking change)
 
+    #875, fix the extension implication information
+    Add --with-group=extra to give extra library hints
+    #873, add more Applicative hints
+    #872, fix refactoring in hints to use lists
+    #871, warn when fmapping the result of gets or asks
+    #869, improve hints for maybe/fromMaybe on Bool
+2.2.11, released 2020-02-09
+    #868, fix some brackets in refactoring suggestions
+    #865, suggest biList if generalise-for-conciseness is turned on
+    #859, suggest regular if instead of a simple multi-way if
+    #860, improve the sortBy/sortOn hints
+    #862, only suggest TupleSections for 2-tuples once
+    #854, add more generalise-for-conciseness hints for Either/Maybe
+    #852, change maybe to fromMaybe, when the function is duplicated
+    #851, add a rule for maybe Nothing Just
 2.2.10, released 2020-02-02
     #846, add splitAt warnings
     #774, don't warn about 'Redundant compare' in == and /=

@@ -15,16 +15,6 @@ strategy:
   matrix:
     # All configs use
     # DA ghc-lib https://digitalassetsdk.bintray.com/ghc-lib/ghc-lib-parser-8.8.1.20191129.tar.gz
-    linux-ghc-lib-881-844:
-      image: "Ubuntu 16.04"
-      stack-yaml: "stack-ghc-844.yaml"
-    windows-ghc-lib-881-844:
-      image: "vs2017-win2016"
-      stack-yaml: "stack-ghc-844.yaml"
-    mac-ghc-lib-881-844:
-      image: "macOS-10.14"
-      stack-yaml: "stack-ghc-844.yaml"
-
     linux-ghc-lib-881-865:
       image: "Ubuntu 16.04"
       stack-yaml: "stack.yaml"
@@ -41,4 +31,5 @@ steps:
   - script: |
       curl -sSL https://get.haskellstack.org/ | sh
       stack --stack-yaml $(stack-yaml) setup
+      stack --stack-yaml $(stack-yaml) install apply-refact
       stack runhaskell --stack-yaml $(stack-yaml) --package extra --package optparse-applicative CI.hs -- --stack-yaml $(stack-yaml)

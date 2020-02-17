@@ -5,7 +5,7 @@ module HSE.Util(module HSE.Util, def) where
 import Control.Monad
 import Data.Default
 import Data.Tuple.Extra
-import Data.List
+import Data.List.Extra
 import Language.Haskell.Exts.Util
 import Control.Monad.Trans.State
 import qualified Data.Map as Map
@@ -15,7 +15,7 @@ import System.FilePath
 import HSE.Type
 import Data.Functor
 import Prelude
-
+import qualified Language.Haskell.GhclibParserEx.DynFlags as GhclibParserEx
 
 ---------------------------------------------------------------------
 -- ACCESSOR/TESTER
@@ -319,14 +319,14 @@ childrenS = childrenBi
 -- return the parent along with the child
 universeParentExp :: Data a => a -> [(Maybe (Int, Exp_), Exp_)]
 universeParentExp xs = concat [(Nothing, x) : f x | x <- childrenBi xs]
-    where f p = concat [(Just (i,p), c) : f c | (i,c) <- zip [0..] $ children p]
+    where f p = concat [(Just (i,p), c) : f c | (i,c) <- zipFrom 0 $ children p]
 
 
 ---------------------------------------------------------------------
 -- SRCLOC FUNCTIONS
 
 showSrcLoc :: SrcLoc -> String
-showSrcLoc (SrcLoc file line col) = take 1 file ++ f (drop 1 file) ++ ":" ++ show line ++ ":" ++ show col
+showSrcLoc (SrcLoc file line col) = take 1 file ++ f (drop1 file) ++ ":" ++ show line ++ ":" ++ show col
     where f (x:y:zs) | isPathSeparator x && isPathSeparator y = f $ x:zs
           f (x:xs) = x : f xs
           f [] = []
@@ -393,27 +393,11 @@ extensionImpliedBy :: Extension -> [Extension]
 extensionImpliedBy = \x -> Map.findWithDefault [] x mp
     where mp = Map.fromListWith (++) [(b, [a]) | (a,bs) <- extensionImplications, b <- bs]
 
--- | (a, bs) means extension a implies all of bs.
---   Taken from https://downloads.haskell.org/~ghc/master/users-guide/glasgow_exts.html#language-options
+-- | (a, bs) means extension a implies all of bs. Uses GHC source at
+-- DynFlags.impliedXFlags
 extensionImplications :: [(Extension, [Extension])]
-extensionImplications = map (first EnableExtension) $
-    (RebindableSyntax, [DisableExtension ImplicitPrelude]) :
-    map (second (map EnableExtension))
-    [ (DerivingVia              , [DerivingStrategies])
-    , (RecordWildCards          , [DisambiguateRecordFields])
-    , (ExistentialQuantification, [ExplicitForAll])
-    , (FlexibleInstances        , [TypeSynonymInstances])
-    , (FunctionalDependencies   , [MultiParamTypeClasses])
-    , (GADTs                    , [MonoLocalBinds])
-    , (IncoherentInstances      , [OverlappingInstances])
---    Incorrect, see https://github.com/ndmitchell/hlint/issues/587
---    , (ImplicitParams           , [FlexibleContexts, FlexibleInstances])
-    , (ImpredicativeTypes       , [ExplicitForAll, RankNTypes])
-    , (LiberalTypeSynonyms      , [ExplicitForAll])
-    , (PolyKinds                , [KindSignatures])
-    , (RankNTypes               , [ExplicitForAll])
-    , (ScopedTypeVariables      , [ExplicitForAll])
-    , (TypeOperators            , [ExplicitNamespaces])
-    , (TypeFamilies             , [ExplicitNamespaces, KindSignatures, MonoLocalBinds])
-    , (TypeFamilyDependencies   , [ExplicitNamespaces, KindSignatures, MonoLocalBinds, TypeFamilies])
-    ]
+extensionImplications = map toHse GhclibParserEx.extensionImplications
+  where
+    enable ext = parseExtension (show ext)
+    disable ext = parseExtension ("No" ++ show ext)
+    toHse (e, (enables, disables)) = (enable e, map enable enables ++ map disable disables)

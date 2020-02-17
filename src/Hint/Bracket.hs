@@ -56,6 +56,7 @@ yes = white $ keysymbol -- white keysymbol
 yes = operator foo $ operator -- operator foo operator
 no = operator foo $ operator bar
 yes = return $ Record{a=b}
+no = f $ [1,2..5] -- f [1,2..5] @NoRefactor: apply-refact bug; see apply-refact #51
 
 -- $/bracket rotation tests
 yes = (b $ c d) ++ e -- b (c d) ++ e
@@ -68,7 +69,7 @@ foo = (case x of y -> z; q -> w) :: Int
 main = do a += b . c; return $ a . b
 
 -- <$> bracket tests
-yes = (foo . bar x) <$> baz q -- foo . bar x <$> baz q
+yes = (foo . bar x) <$> baz q -- foo . bar x <$> baz q @NoRefactor hlint bug: ideaRefactoring = []
 no = foo . bar x <$> baz q
 
 -- annotations
@@ -91,6 +92,7 @@ module Hint.Bracket(bracketHint) where
 
 import Hint.Type(DeclHint',Idea(..),rawIdea',warn',suggest',Severity(..),toSS')
 import Data.Data
+import Data.List.Extra
 import Data.Generics.Uniplate.Operations
 import Refact.Types
 
@@ -183,7 +185,7 @@ bracket pretty isPartialAtom root = f Nothing
     g :: (HasSrcSpan a, Data a, Outputable a, Brackets' a) => a -> [Idea]
     -- Enumerate over all the immediate children of 'o' looking for
     -- redundant parentheses in each.
-    g o = concat [f (Just (i, o, gen)) x | (i, (x, gen)) <- zip [0..] $ holes o]
+    g o = concat [f (Just (i, o, gen)) x | (i, (x, gen)) <- zipFrom 0 $ holes o]
 
 bracketWarning :: (HasSrcSpan a, HasSrcSpan b, Data (SrcSpanLess b), Outputable a, Outputable b) => String -> a -> b -> Idea
 bracketWarning msg o x =

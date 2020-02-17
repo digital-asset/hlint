@@ -46,6 +46,7 @@ import qualified DynFlags as GHC
 
 import GHC.Util
 import qualified Language.Haskell.GhclibParserEx.Fixity as GhclibParserEx
+import qualified Language.Haskell.GhclibParserEx.DynFlags as GhclibParserEx
 
 -- | Convert a GHC source loc into an HSE equivalent.
 ghcSrcLocToHSE :: GHC.SrcLoc -> SrcLoc
@@ -298,10 +299,10 @@ ghcExtensionsFromParseMode ParseMode {extensions=exts}=
    partitionEithers $ mapMaybe toEither exts
    where
      toEither ke = case ke of
-       EnableExtension e  -> Left  <$> readExtension (show e)
-       DisableExtension e -> Right <$> readExtension (show e)
-       UnknownExtension ('N':'o':e) -> Right <$> readExtension e
-       UnknownExtension e -> Left <$> readExtension e
+       EnableExtension e  -> Left  <$> GhclibParserEx.readExtension (show e)
+       DisableExtension e -> Right <$> GhclibParserEx.readExtension (show e)
+       UnknownExtension ('N':'o':e) -> Right <$> GhclibParserEx.readExtension e
+       UnknownExtension e -> Left <$> GhclibParserEx.readExtension e
 
 -- GHC extensions to enable/disable given HSE parse flags.
 ghcExtensionsFromParseFlags :: ParseFlags
@@ -341,7 +342,7 @@ parseModuleEx flags file str = timedIO "Parse" file $ do
             Just x -> return x
             Nothing | file == "-" -> getContentsUTF8
                     | otherwise -> readFileUTF8' file
-        str <- return $ fromMaybe str $ stripPrefix "\65279" str -- remove the BOM if it exists, see #130
+        str <- return $ dropPrefix "\65279" str -- remove the BOM if it exists, see #130
         ppstr <- runCpp (cppFlags flags) file str
         let enableDisableExts = ghcExtensionsFromParseFlags flags
             fixities = ghcFixitiesFromParseFlags flags -- Note : Fixities are coming from HSE parse flags.
