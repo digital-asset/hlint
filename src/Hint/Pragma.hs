@@ -14,12 +14,13 @@
 {-# OPTIONS     -cpp #-} -- {-# LANGUAGE CPP #-}
 {-# OPTIONS_YHC -cpp #-}
 {-# OPTIONS_GHC -XFoo #-} -- {-# LANGUAGE Foo #-}
-{-# OPTIONS_GHC -fglasgow-exts #-} -- ???
+{-# OPTIONS_GHC -fglasgow-exts #-} -- ??? @NoRefactor
 {-# LANGUAGE RebindableSyntax, EmptyCase, DuplicateRecordFields, RebindableSyntax #-} -- {-# LANGUAGE RebindableSyntax, EmptyCase, DuplicateRecordFields #-}
 {-# LANGUAGE RebindableSyntax #-}
-{-# OPTIONS_GHC -cpp -foo #-} -- {-# LANGUAGE CPP #-} {-# OPTIONS_GHC -foo #-}
+{-# OPTIONS_GHC -cpp -foo #-} -- {-# LANGUAGE CPP #-} {-# OPTIONS_GHC -foo #-} @NoRefactor -foo is not a valid flag
+{-# OPTIONS_GHC -cpp -w #-} -- {-# LANGUAGE CPP #-} {-# OPTIONS_GHC -w #-} @NoRefactor: the two pragmas are switched in the refactoring output
 {-# OPTIONS_GHC -cpp #-} \
-{-# LANGUAGE CPP, Text #-} --
+{-# LANGUAGE CPP, Text #-} -- @NoRefactor
 {-# LANGUAGE RebindableSyntax #-} \
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE RebindableSyntax #-} \
@@ -32,6 +33,7 @@ module Hint.Pragma(pragmaHint) where
 
 import Hint.Type(ModuHint,ModuleEx(..),Idea(..),Severity(..),toSS',rawIdea',prettyExtension,glasgowExts)
 import Data.List.Extra
+import qualified Data.List.NonEmpty as NE
 import Data.Maybe
 import Refact.Types
 import qualified Refact.Types as R
@@ -52,7 +54,7 @@ optToPragma :: [(Located AnnotationComment, [String])]
              -> [(Located AnnotationComment, [String])]
              -> [Idea]
 optToPragma flags langExts =
-  [pragmaIdea (OptionsToComment (map fst old) ys rs) | old /= []]
+  [pragmaIdea (OptionsToComment (fst <$> old2) ys rs) | Just old2 <- [NE.nonEmpty old]]
   where
       (old, new, ns, rs) =
         unzip4 [(old, new, ns, r)
@@ -73,7 +75,7 @@ optToPragma flags langExts =
 
 data PragmaIdea = SingleComment (Located AnnotationComment) (Located AnnotationComment)
                  | MultiComment (Located AnnotationComment) (Located AnnotationComment) (Located AnnotationComment)
-                 | OptionsToComment [Located AnnotationComment] [Located AnnotationComment] [Refactoring R.SrcSpan]
+                 | OptionsToComment (NE.NonEmpty (Located AnnotationComment)) [Located AnnotationComment] [Refactoring R.SrcSpan]
 
 pragmaIdea :: PragmaIdea -> Idea
 pragmaIdea pidea =
@@ -87,8 +89,8 @@ pragmaIdea pidea =
         [ ModifyComment (toSS' repl) (comment new)
         , ModifyComment (toSS' delete) ""]
     OptionsToComment old new r ->
-      mkLanguage (getLoc . head $ old)
-        (f old) (Just $ f new) []
+      mkLanguage (getLoc . NE.head $ old)
+        (f $ NE.toList old) (Just $ f new) []
         r
     where
           f = unlines . map comment
@@ -99,7 +101,7 @@ languageDupes :: [(Located AnnotationComment, [String])] -> [Idea]
 languageDupes ( (a@(LL l _), les) : cs ) =
   (if nubOrd les /= les
        then [pragmaIdea (SingleComment a (mkLangExts l $ nubOrd les))]
-       else [pragmaIdea (MultiComment a b (mkLangExts l (nubOrd $ les ++ les'))) | ( b@(LL _ _), les' ) <- cs, not $ null $ intersect les les']
+       else [pragmaIdea (MultiComment a b (mkLangExts l (nubOrd $ les ++ les'))) | ( b@(LL _ _), les' ) <- cs, not $ disjoint les les']
   ) ++ languageDupes cs
 languageDupes _ = []
 

@@ -18,7 +18,6 @@ import GHC.Util.Module
 import GHC.Util.RdrName
 import Outputable
 
-import Data.List
 import Data.List.Extra
 import Data.Maybe
 
@@ -61,14 +60,14 @@ scopeMatch' (a, x) (b, y)
   | isSpecial' x && isSpecial' y = rdrNameStr' x == rdrNameStr' y
   | isSpecial' x || isSpecial' y = False
   | otherwise =
-     rdrNameStr' (unqual' x) == rdrNameStr' (unqual' y) && not (null $ possModules' a x `intersect` possModules' b y)
+     rdrNameStr' (unqual' x) == rdrNameStr' (unqual' y) && not (possModules' a x `disjoint` possModules' b y)
 
 -- Given a name in a scope, and a new scope, create a name for the new
 -- scope that will refer to the same thing. If the resulting name is
 -- ambiguous, pick a plausible candidate.
 scopeMove' :: (Scope', Located RdrName) -> Scope' -> Located RdrName
 scopeMove' (a, x@(fromQual' -> Just name)) (Scope' b) = case imps of
-  [] -> head $ real ++ [x]
+  [] -> headDef x real
   imp:_ | all ideclQualified imps -> noLoc $ mkRdrQual (unLoc . fromMaybe (ideclName imp) $ firstJust ideclAs imps) name
         | otherwise -> unqual' x
   where

@@ -13,7 +13,7 @@ yes = [x] ++ xs -- x : xs
 no = "x" ++ xs
 no = [x] ++ xs ++ ys
 no = xs ++ [x] ++ ys
-yes = [if a then b else c] ++ xs -- (if a then b else c) : xs
+yes = [if a then b else c] ++ xs -- (if a then b else c) : xs @NoRefactor: hlint bug, missing brackets in refactoring template
 yes = [1] : [2] : [3] : [4] : [5] : [] -- [[1], [2], [3], [4], [5]]
 yes = if x == e then l2 ++ xs else [x] ++ check_elem xs -- x : check_elem xs
 data Yes = Yes (Maybe [Char]) -- Maybe String
@@ -43,7 +43,7 @@ import Data.List.Extra
 import Data.Maybe
 import Prelude
 
-import Hint.Type(DeclHint',Idea,suggest',toSS')
+import Hint.Type(DeclHint',Idea,suggest',toRefactSrcSpan',toSS')
 
 import Refact.Types hiding (SrcSpan)
 import qualified Refact.Types as R
@@ -158,14 +158,14 @@ isAppend (view' -> App2' op _ _) = varToStr op == "++"
 isAppend _ = False
 
 checks ::[(String, Bool -> LHsExpr GhcPs -> Maybe (LHsExpr GhcPs, [(String, R.SrcSpan)], String))]
-checks = let (*) = (,) in drop 1 -- see #174
+checks = let (*) = (,) in drop1 -- see #174
   [ "Use string literal" * useString
   , "Use list literal" * useList
   , "Use ::" * useCons -- Note : Report '::' respecting DAML's colon conventions.
   ]
 
 pchecks :: [(String, Pat GhcPs -> Maybe (Pat GhcPs, [(String, R.SrcSpan)], String))]
-pchecks = let (*) = (,) in drop 1 -- see #174
+pchecks = let (*) = (,) in drop1 -- see #174
     [ "Use string literal pattern" * usePString
     , "Use list literal pattern" * usePList
     ]
@@ -180,7 +180,7 @@ usePList :: Pat GhcPs -> Maybe (Pat GhcPs, [(String, R.SrcSpan)], String)
 usePList =
   fmap  ( (\(e, s) ->
              (noLoc (ListPat noExt e)
-             , map (fmap toSS') s
+             , map (fmap toRefactSrcSpan' . fst) s
              , unsafePrettyPrint (noLoc $ ListPat noExt (map snd s) :: Pat GhcPs))
           )
           . unzip
@@ -191,8 +191,8 @@ usePList =
     f first (ident:cs) (view' -> PApp_' ":" [a, b]) = ((a, g ident a) :) <$> f False cs b
     f first _ _ = Nothing
 
-    g :: Char -> Pat GhcPs -> (String, Pat GhcPs)
-    g c p = ([c], VarPat noExt (noLoc $ mkVarUnqual (fsLit [c])))
+    g :: Char -> Pat GhcPs -> ((String, SrcSpan), Pat GhcPs)
+    g c (getLoc -> loc) = (([c], loc), VarPat noExt (noLoc $ mkVarUnqual (fsLit [c])))
 
 useString :: p -> LHsExpr GhcPs -> Maybe (LHsExpr GhcPs, [a], String)
 useString b (LL _ (ExplicitList _ _ xs)) | not $ null xs, Just s <- mapM fromChar xs =
@@ -217,7 +217,7 @@ useList b =
     f first _ _ = Nothing
 
     g :: Char -> LHsExpr GhcPs -> (String, LHsExpr GhcPs)
-    g c p = ([c], strToVar [c])
+    g c p = ([c], LL (getLoc p) (unLoc $ strToVar [c]))
 
 useCons :: View' a App2' => Bool -> a -> Maybe (LHsExpr GhcPs, [(String, R.SrcSpan)], String)
 useCons False (view' -> App2' op x y) | varToStr op == "++"

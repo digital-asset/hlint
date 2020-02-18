@@ -1,7 +1,7 @@
 cabal-version:      >= 1.18
 build-type:         Simple
 name:               hlint
-version:            2.2.10
+version:            2.2.11
 license:            BSD3
 license-file:       LICENSE
 category:           Development
@@ -64,7 +64,7 @@ library
         haskell-src-exts-util >= 0.2.5,
         uniplate >= 1.5,
         ansi-terminal >= 0.6.2,
-        extra >= 1.6.6,
+        extra >= 1.6.19,
         refact >= 0.3,
         aeson >= 1.1.2.0,
         filepattern >= 0.1.1,
@@ -72,7 +72,8 @@ library
     if !flag(ghc-lib) && impl(ghc >= 8.8.0) && impl(ghc < 8.9.0)
         build-depends:
           ghc == 8.8.*,
-          ghc-boot-th
+          ghc-boot-th,
+          ghc-boot
     else
         build-depends:
           ghc-lib-parser
@@ -117,7 +118,6 @@ library
         GHC.Util.HsExpr
         GHC.Util.HsType
         GHC.Util.Pat
-        GHC.Util.LanguageExtensions.Type
         GHC.Util.Module
         GHC.Util.Outputable
         GHC.Util.SrcLoc
