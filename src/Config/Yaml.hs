@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings, ViewPatterns, RecordWildCards, GeneralizedNewtypeDeriving, TupleSections #-}
 
 module Config.Yaml(
@@ -18,19 +19,27 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.HashMap.Strict as Map
-import HSE.All hiding (Rule, String)
+import Data.Generics.Uniplate.Data
+import HSE.All
+import Fixity
+import Extension
+import Module
 import Data.Functor
 import Data.Semigroup
 import Timing
-import Util
 import Prelude
 
 import qualified Lexer as GHC
 import qualified ErrUtils
 import qualified Outputable
 import qualified HsSyn
-import GHC.Util (baseDynFlags, Scope',scopeCreate')
+import SrcLoc
+import qualified RdrName as GHC
+import qualified OccName as GHC
+import GHC.Util (baseDynFlags, Scope,scopeCreate)
 import Language.Haskell.GhclibParserEx.GHC.Hs.ExtendInstances
+import Data.Char
+
 
 -- | Read a config file in YAML format. Takes a filename, and optionally the contents.
 --   Fails if the YAML doesn't parse or isn't valid HLint YAML
@@ -38,10 +47,10 @@ readFileConfigYaml :: FilePath -> Maybe String -> IO ConfigYaml
 readFileConfigYaml file contents = timedIO "Config" file $ do
     val <- case contents of
         Nothing -> decodeFileEither file
-        Just src -> return $ decodeEither' $ BS.pack src
+        Just src -> pure $ decodeEither' $ BS.pack src
     case val of
         Left e -> fail $ "Failed to read YAML configuration file " ++ file ++ "\n  " ++ displayException e
-        Right v -> return v
+        Right v -> pure v
 
 
 ---------------------------------------------------------------------
@@ -57,15 +66,13 @@ data ConfigItem
 
 data Package = Package
     {packageName :: String
-    ,packageModules :: [ImportDecl S]
-    ,packageGhcModules :: [HsExtendInstances (HsSyn.LImportDecl HsSyn.GhcPs)]
+    ,packageModules :: [HsExtendInstances (HsSyn.LImportDecl HsSyn.GhcPs)]
     } deriving Show
 
 data Group = Group
     {groupName :: String
     ,groupEnabled :: Bool
-    ,groupImports :: [Either String (ImportDecl S)] -- Left for package imports
-    ,groupGhcImports :: [Either String (HsExtendInstances (HsSyn.LImportDecl HsSyn.GhcPs))]
+    ,groupImports :: [Either String (HsExtendInstances (HsSyn.LImportDecl HsSyn.GhcPs))]
     ,groupRules :: [Either HintRule Classify] -- HintRule has scope set to mempty
     } deriving Show
 
@@ -100,10 +107,10 @@ parseFail (Val focus path) msg = fail $
 
 parseArray :: Val -> Parser [Val]
 parseArray v@(getVal -> Array xs) = concatMapM parseArray $ zipWithFrom (\i x -> addVal (show i) x v) 0 $ V.toList xs
-parseArray v = return [v]
+parseArray v = pure [v]
 
 parseObject :: Val -> Parser (Map.HashMap T.Text Value)
-parseObject (getVal -> Object x) = return x
+parseObject (getVal -> Object x) = pure x
 parseObject v = parseFail v "Expected an Object"
 
 parseObject1 :: Val -> Parser (String, Val)
@@ -114,7 +121,7 @@ parseObject1 v = do
         _ -> parseFail v $ "Expected exactly one key but got " ++ show (Map.size mp)
 
 parseString :: Val -> Parser String
-parseString (getVal -> String x) = return $ T.unpack x
+parseString (getVal -> String x) = pure $ T.unpack x
 parseString v = parseFail v "Expected a String"
 
 parseInt :: Val -> Parser Int
@@ -125,11 +132,11 @@ parseArrayString :: Val -> Parser [String]
 parseArrayString = parseArray >=> mapM parseString
 
 maybeParse :: (Val -> Parser a) -> Maybe Val -> Parser (Maybe a)
-maybeParse parseValue Nothing = return Nothing
+maybeParse parseValue Nothing = pure Nothing
 maybeParse parseValue (Just value) = Just <$> parseValue value
 
 parseBool :: Val -> Parser Bool
-parseBool (getVal -> Bool b) = return b
+parseBool (getVal -> Bool b) = pure b
 parseBool v = parseFail v "Expected a Bool"
 
 parseField :: String -> Val -> Parser Val
@@ -137,14 +144,14 @@ parseField s v = do
     x <- parseFieldOpt s v
     case x of
         Nothing -> parseFail v $ "Expected a field named " ++ s
-        Just v -> return v
+        Just v -> pure v
 
 parseFieldOpt :: String -> Val -> Parser (Maybe Val)
 parseFieldOpt s v = do
     mp <- parseObject v
     case Map.lookup (T.pack s) mp of
-        Nothing -> return Nothing
-        Just x -> return $ Just $ addVal s x v
+        Nothing -> pure Nothing
+        Just x -> pure $ Just $ addVal s x v
 
 allowFields :: Val -> [String] -> Parser ()
 allowFields v allow = do
@@ -153,19 +160,11 @@ allowFields v allow = do
     when (bad /= []) $
         parseFail v $ "Not allowed keys: " ++ unwords bad
 
-parseHSE :: (ParseMode -> String -> ParseResult v) -> Val -> Parser v
-parseHSE parser v = do
-    x <- parseString v
-    case parser defaultParseMode{extensions=configExtensions} x of
-        ParseOk x -> return x
-        ParseFailed loc s ->
-          parseFail v $ "Failed to parse " ++ s ++ ", when parsing:\n  " ++ x
-
 parseGHC :: (ParseMode -> String -> GHC.ParseResult v) -> Val -> Parser v
 parseGHC parser v = do
     x <- parseString v
     case parser defaultParseMode{extensions=configExtensions} x of
-        GHC.POk _ x -> return x
+        GHC.POk _ x -> pure x
         GHC.PFailed _ loc err ->
           let msg = Outputable.showSDoc baseDynFlags $
                 ErrUtils.pprLocErrMsg (ErrUtils.mkPlainErrMsg baseDynFlags loc err)
@@ -175,7 +174,7 @@ parseGHC parser v = do
 -- YAML TO DATA TYPE
 
 instance FromJSON ConfigYaml where
-    parseJSON Null = return mempty
+    parseJSON Null = pure mempty
     parseJSON x = parseConfigYaml $ newVal x
 
 parseConfigYaml :: Val -> Parser ConfigYaml
@@ -197,15 +196,14 @@ parseConfigYaml v = do
 parsePackage :: Val -> Parser Package
 parsePackage v = do
     packageName <- parseField "name" v >>= parseString
-    packageModules <- parseField "modules" v >>= parseArray >>= mapM (parseHSE parseImportDeclWithMode)
-    packageGhcModules <- parseField "modules" v >>= parseArray >>= mapM (fmap extendInstances <$> parseGHC parseImportDeclGhcWithMode)
+    packageModules <- parseField "modules" v >>= parseArray >>= mapM (fmap extendInstances <$> parseGHC parseImportDeclGhcWithMode)
     allowFields v ["name","modules"]
-    return Package{..}
+    pure Package{..}
 
 parseFixity :: Val -> Parser [Setting]
-parseFixity v = parseArray v >>= concatMapM (parseHSE parseDeclWithMode >=> f)
+parseFixity v = parseArray v >>= concatMapM (parseGHC parseDeclGhcWithMode >=> f)
     where
-        f x@InfixDecl{} = return $ map Infix $ getFixity x
+        f (L _ (HsSyn.SigD _ (HsSyn.FixSig _ x))) = pure $ map Infix $ fromFixitySig x
         f _ = parseFail v "Expected fixity declaration"
 
 parseSmell :: Val -> Parser [Setting]
@@ -213,59 +211,48 @@ parseSmell v = do
   smellName <- parseField "type" v >>= parseString
   smellType <- require v "Expected SmellType"  $ getSmellType smellName
   smellLimit <- parseField "limit" v >>= parseInt
-  return [SettingSmell smellType smellLimit]
+  pure [SettingSmell smellType smellLimit]
     where
       require :: Val -> String -> Maybe a -> Parser a
-      require _ _ (Just a) = return a
+      require _ _ (Just a) = pure a
       require val err Nothing = parseFail val err
 
 parseGroup :: Val -> Parser Group
 parseGroup v = do
     groupName <- parseField "name" v >>= parseString
-    groupEnabled <- parseFieldOpt "enabled" v >>= maybe (return True) parseBool
-    groupImports <- parseFieldOpt "imports" v >>= maybe (return []) (parseArray >=> mapM parseImport)
-    groupGhcImports <- parseFieldOpt "imports" v >>= maybe (return []) (parseArray >=> mapM parseImportGHC)
-    groupRules <- parseFieldOpt "rules" v >>= maybe (return []) parseArray >>= concatMapM parseRule
+    groupEnabled <- parseFieldOpt "enabled" v >>= maybe (pure True) parseBool
+    groupImports <- parseFieldOpt "imports" v >>= maybe (pure []) (parseArray >=> mapM parseImport)
+    groupRules <- parseFieldOpt "rules" v >>= maybe (pure []) parseArray >>= concatMapM parseRule
     allowFields v ["name","enabled","imports","rules"]
-    return Group{..}
+    pure Group{..}
     where
         parseImport v = do
             x <- parseString v
             case word1 x of
-                ("package", x) -> return $ Left x
-                _ -> Right <$> parseHSE parseImportDeclWithMode v
-        parseImportGHC v = do
-            x <- parseString v
-            case word1 x of
-                 ("package", x) -> return $ Left x
+                 ("package", x) -> pure $ Left x
                  _ -> Right . extendInstances <$> parseGHC parseImportDeclGhcWithMode v
 
 ruleToGroup :: [Either HintRule Classify] -> Group
-ruleToGroup = Group "" True [] []
+ruleToGroup = Group "" True []
 
 parseRule :: Val -> Parser [Either HintRule Classify]
 parseRule v = do
     (severity, v) <- parseSeverityKey v
     isRule <- isJust <$> parseFieldOpt "lhs" v
     if isRule then do
-        hintRuleLHS <- parseField "lhs" v >>= parseHSE parseExpWithMode
-        hintRuleRHS <- parseField "rhs" v >>= parseHSE parseExpWithMode
-        hintRuleNotes <- parseFieldOpt "note" v >>= maybe (return []) (fmap (map asNote) . parseArrayString)
-        hintRuleName <- parseFieldOpt "name" v >>= maybe (return $ guessName hintRuleLHS hintRuleRHS) parseString
-        hintRuleSide <- parseFieldOpt "side" v >>= maybe (return Nothing) (fmap Just . parseHSE parseExpWithMode)
-
-        hintRuleGhcLHS <- parseField "lhs" v >>= fmap extendInstances . parseGHC parseExpGhcWithMode
-        hintRuleGhcRHS <- parseField "rhs" v >>= fmap extendInstances . parseGHC parseExpGhcWithMode
-        hintRuleGhcSide <- parseFieldOpt "side" v >>= maybe (return Nothing) (fmap (Just . extendInstances) . parseGHC parseExpGhcWithMode)
+        hintRuleNotes <- parseFieldOpt "note" v >>= maybe (pure []) (fmap (map asNote) . parseArrayString)
+        lhs <- parseField "lhs" v >>= parseGHC parseExpGhcWithMode
+        rhs <- parseField "rhs" v >>= parseGHC parseExpGhcWithMode
+        hintRuleSide <- parseFieldOpt "side" v >>= maybe (pure Nothing) (fmap (Just . extendInstances) . parseGHC parseExpGhcWithMode)
+        hintRuleName <- parseFieldOpt "name" v >>= maybe (pure $ guessName lhs rhs) parseString
 
         allowFields v ["lhs","rhs","note","name","side"]
-        let hintRuleScope = mempty :: Scope
-        let hintRuleGhcScope = extendInstances mempty :: HsExtendInstances Scope'
-        return [Left HintRule{hintRuleSeverity=severity, ..}]
+        let hintRuleScope = mempty
+        pure [Left HintRule{hintRuleSeverity=severity,hintRuleLHS=extendInstances lhs,hintRuleRHS=extendInstances rhs, ..}]
      else do
-        names <- parseFieldOpt "name" v >>= maybe (return []) parseArrayString
-        within <- parseFieldOpt "within" v >>= maybe (return [("","")]) (parseArray >=> concatMapM parseWithin)
-        return [Right $ Classify severity n a b | (a,b) <- within, n <- ["" | null names] ++ names]
+        names <- parseFieldOpt "name" v >>= maybe (pure []) parseArrayString
+        within <- parseFieldOpt "within" v >>= maybe (pure [("","")]) (parseArray >=> concatMapM parseWithin)
+        pure [Right $ Classify severity n a b | (a,b) <- within, n <- ["" | null names] ++ names]
 
 parseRestrict :: RestrictType -> Val -> Parser Restrict
 parseRestrict restrictType v = do
@@ -274,42 +261,44 @@ parseRestrict restrictType v = do
         Just def -> do
             b <- parseBool def
             allowFields v ["default"]
-            return $ Restrict restrictType b [] [] [] [] Nothing
+            pure $ Restrict restrictType b [] [] [] [] Nothing
         Nothing -> do
-            restrictName <- parseFieldOpt "name" v >>= maybe (return []) parseArrayString
-            restrictWithin <- parseFieldOpt "within" v >>= maybe (return [("","")]) (parseArray >=> concatMapM parseWithin)
-            restrictAs <- parseFieldOpt "as" v >>= maybe (return []) parseArrayString
+            restrictName <- parseFieldOpt "name" v >>= maybe (pure []) parseArrayString
+            restrictWithin <- parseFieldOpt "within" v >>= maybe (pure [("","")]) (parseArray >=> concatMapM parseWithin)
+            restrictAs <- parseFieldOpt "as" v >>= maybe (pure []) parseArrayString
             restrictBadIdents <- parseFieldOpt "badidents" v >>= maybe (pure []) parseArrayString
             restrictMessage <- parseFieldOpt "message" v >>= maybeParse parseString
             allowFields v $ ["as" | restrictType == RestrictModule] ++ ["badidents", "name", "within", "message"]
-            return Restrict{restrictDefault=True,..}
+            pure Restrict{restrictDefault=True,..}
 
 parseWithin :: Val -> Parser [(String, String)] -- (module, decl)
 parseWithin v = do
-    x <- parseHSE parseExpWithMode v
+    x <- parseGHC parseExpGhcWithMode v
     case x of
-        Var _ (UnQual _ name) -> return [("",fromNamed name)]
-        Var _ (Qual _ (ModuleName _ mod) name) -> return [(mod, fromNamed name)]
-        Con _ (UnQual _ name) -> return [(fromNamed name,""),("",fromNamed name)]
-        Con _ (Qual _ (ModuleName _ mod) name) -> return [(mod ++ "." ++ fromNamed name,""),(mod,fromNamed name)]
+        L _ (HsSyn.HsVar _ (L _ (GHC.Unqual x))) -> pure $ f "" (GHC.occNameString x)
+        L _ (HsSyn.HsVar _ (L _ (GHC.Qual mod x))) -> pure $ f (moduleNameString mod) (GHC.occNameString x)
         _ -> parseFail v "Bad classification rule"
+    where
+        f mod name@(c:_) | isUpper c = [(mod,name),(mod ++ ['.' | mod /= ""] ++ name, "")]
+        f mod name = [(mod, name)]
 
 parseSeverityKey :: Val -> Parser (Severity, Val)
 parseSeverityKey v = do
     (s, v) <- parseObject1 v
     case getSeverity s of
-        Just sev -> return (sev, v)
+        Just sev -> pure (sev, v)
         _ -> parseFail v $ "Key should be a severity (e.g. warn/error/suggest) but got " ++ s
 
 
-guessName :: Exp_ -> Exp_ -> String
+guessName :: HsSyn.LHsExpr HsSyn.GhcPs -> HsSyn.LHsExpr HsSyn.GhcPs -> String
 guessName lhs rhs
     | n:_ <- rs \\ ls = "Use " ++ n
     | n:_ <- ls \\ rs = "Redundant " ++ n
     | otherwise = defaultHintName
     where
         (ls, rs) = both f (lhs, rhs)
-        f = filter (not . isUnifyVar) . map (\x -> fromNamed (x :: Name S)) . childrenS
+        f :: HsSyn.LHsExpr HsSyn.GhcPs -> [String]
+        f x = [y | L _ (HsSyn.HsVar _ (L _ x)) <- universe x, let y = GHC.occNameString $ GHC.rdrNameOcc x,  not $ isUnifyVar y]
 
 
 asNote :: String -> Note
@@ -330,26 +319,17 @@ settingsFromConfigYaml (mconcat -> ConfigYaml configs) = settings ++ concatMap f
         packages = [x | ConfigPackage x <- configs]
         groups = [x | ConfigGroup x <- configs]
         settings = concat [x | ConfigSetting x <- configs]
-        packageMap = Map.fromListWith (++) [(packageName, packageModules) | Package{..} <- packages]
-        packageMap' = Map.fromListWith (++) [(packageName, fmap unextendInstances packageGhcModules) | Package{..} <- packages]
+        packageMap' = Map.fromListWith (++) [(packageName, fmap unextendInstances packageModules) | Package{..} <- packages]
         groupMap = Map.fromListWith (\new old -> new) [(groupName, groupEnabled) | Group{..} <- groups]
 
         f Group{..}
             | Map.lookup groupName groupMap == Just False = []
-            | otherwise = map (either (\r -> SettingMatchExp r{hintRuleScope=scope,hintRuleGhcScope=scope'}) SettingClassify) groupRules
+            | otherwise = map (either (\r -> SettingMatchExp r{hintRuleScope=scope'}) SettingClassify) groupRules
             where
-              scope = asScope packageMap groupImports
-              scope'= asScope' packageMap' (map (fmap unextendInstances) groupGhcImports)
+              scope'= asScope' packageMap' (map (fmap unextendInstances) groupImports)
 
-asScope :: Map.HashMap String [ImportDecl S] -> [Either String (ImportDecl S)] -> Scope
-asScope packages xs = scopeCreate $ Module an Nothing [] (concatMap f xs) []
-    where
-        f (Right x) = [x]
-        f (Left x) | Just pkg <- Map.lookup x packages = pkg
-                   | otherwise = error $ "asScope failed to do lookup, " ++ x
-
-asScope' :: Map.HashMap String [HsSyn.LImportDecl HsSyn.GhcPs] -> [Either String (HsSyn.LImportDecl HsSyn.GhcPs)] -> HsExtendInstances Scope'
-asScope' packages xs = HsExtendInstances $ scopeCreate' (HsSyn.HsModule Nothing Nothing (concatMap f xs) [] Nothing Nothing)
+asScope' :: Map.HashMap String [HsSyn.LImportDecl HsSyn.GhcPs] -> [Either String (HsSyn.LImportDecl HsSyn.GhcPs)] -> Scope
+asScope' packages xs = scopeCreate (HsSyn.HsModule Nothing Nothing (concatMap f xs) [] Nothing Nothing)
     where
         f (Right x) = [x]
         f (Left x) | Just pkg <- Map.lookup x packages = pkg

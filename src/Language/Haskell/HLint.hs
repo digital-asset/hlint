@@ -10,7 +10,7 @@ module Language.Haskell.HLint(hlint, Suggestion, suggestionLocation, suggestionS
 import qualified HLint
 import Config.Type
 import Idea
-import HSE.All
+import SrcLoc(SrcSpan)
 
 
 -- | This function takes a list of command line arguments, and returns the given suggestions.
@@ -34,8 +34,8 @@ instance Show Suggestion where
     show = show . fromSuggestion
 
 -- | From a suggestion, extract the file location it refers to.
-suggestionLocation :: Suggestion -> SrcLoc
-suggestionLocation = getPointLoc . ideaSpan . fromSuggestion
+suggestionLocation :: Suggestion -> SrcSpan
+suggestionLocation = ideaSpan . fromSuggestion
 
 
 -- | From a suggestion, determine how severe it is.

@@ -1,12 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module GHC.Util.FreeVars (
-    vars', varss', pvars', freeVarSet'
-  , Vars' (..), FreeVars'(..) , AllVars' (..)
+    vars', varss', pvars',
+    Vars' (..), FreeVars'(..) , AllVars' (..)
   ) where
 
 import RdrName
@@ -151,6 +150,10 @@ instance FreeVars' (LHsExpr GhcPs) where
 
   freeVars' e = freeVars' $ children e
 
+instance FreeVars' (LHsTupArg GhcPs) where
+  freeVars' (dL -> L _ (Present _ args)) = freeVars' args
+  freeVars' _ = mempty
+
 instance FreeVars' (LHsRecField GhcPs (LHsExpr GhcPs)) where
    freeVars' (dL -> L _ (HsRecField _ x _)) = freeVars' x
 
@@ -264,6 +267,3 @@ varss' = Set.toList . Set.map occNameString . free' . allVars'
 
 pvars' :: AllVars' a => a -> [String]
 pvars' = Set.toList . Set.map occNameString . bound' . allVars'
-
-freeVarSet' :: FreeVars' a => a -> Set String
-freeVarSet' = Set.map occNameString . freeVars'

@@ -1,24 +1,15 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE TupleSections #-}
 
 module HSE.All(
-    module X,
     CppFlags(..), ParseFlags(..), defaultParseFlags,
     parseFlagsAddFixities, parseFlagsSetLanguage,
+    ParseMode(..), defaultParseMode,
     ParseError(..), ModuleEx(..),
     parseModuleEx, ghcComments,
-    freeVars, vars, varss, pvars,
-    ghcSpanToHSE, ghcSrcLocToHSE,
-    parseExpGhcWithMode, parseImportDeclGhcWithMode
+    parseExpGhcWithMode, parseImportDeclGhcWithMode, parseDeclGhcWithMode,
     ) where
 
-import Language.Haskell.Exts.Util hiding (freeVars, Vars(..))
-import qualified Language.Haskell.Exts.Util as X
-import HSE.Util as X
-import HSE.Type as X
-import HSE.Match as X
-import HSE.Scope as X
 import Util
 import Data.Char
 import Data.List.Extra
@@ -26,57 +17,27 @@ import Data.Maybe
 import Timing
 import Language.Preprocessor.Cpphs
 import Data.Either
-import Data.Set (Set)
+import DynFlags(Language(..))
 import qualified Data.Map as Map
-import qualified Data.Set as Set
 import System.IO.Extra
 import Data.Functor
+import Fixity
+import Extension
+import FastString
 import Prelude
 
 import qualified HsSyn
-import qualified FastString
 import qualified SrcLoc as GHC
 import qualified ErrUtils
 import qualified Outputable
 import qualified Lexer as GHC
-import qualified GHC.LanguageExtensions.Type as GHC
+import GHC.LanguageExtensions.Type
 import qualified ApiAnnotation as GHC
 import qualified BasicTypes as GHC
 import qualified DynFlags as GHC
 
-import GHC.Util
+import GHC.Util (parsePragmasIntoDynFlags, parseFileGhcLib, parseExpGhcLib, parseDeclGhcLib, parseImportGhcLib, baseDynFlags)
 import qualified Language.Haskell.GhclibParserEx.Fixity as GhclibParserEx
-import qualified Language.Haskell.GhclibParserEx.DynFlags as GhclibParserEx
-
--- | Convert a GHC source loc into an HSE equivalent.
-ghcSrcLocToHSE :: GHC.SrcLoc -> SrcLoc
-ghcSrcLocToHSE (GHC.RealSrcLoc l) =
-  SrcLoc {
-      srcFilename = FastString.unpackFS (GHC.srcLocFile l)
-    , srcLine = GHC.srcLocLine l
-    , srcColumn = GHC.srcLocCol l
-    }
-ghcSrcLocToHSE (GHC.UnhelpfulLoc _) = noLoc
-
--- | Convert a GHC source span into an HSE equivalent.
-ghcSpanToHSE :: GHC.SrcSpan -> SrcSpan
-ghcSpanToHSE (GHC.RealSrcSpan s) =
-  SrcSpan {
-      srcSpanFilename = FastString.unpackFS (GHC.srcSpanFile s)
-    , srcSpanStartLine = GHC.srcSpanStartLine s
-    , srcSpanStartColumn = GHC.srcSpanStartCol s
-    , srcSpanEndLine = GHC.srcSpanEndLine s
-    , srcSpanEndColumn = GHC.srcSpanEndCol s
-    }
-ghcSpanToHSE (GHC.UnhelpfulSpan _) = mkSrcSpan noLoc noLoc
-
-vars :: FreeVars a => a -> [String]
-freeVars :: FreeVars a => a -> Set String
-varss, pvars :: AllVars a => a -> [String]
-vars  = Set.toList . Set.map prettyPrint . X.freeVars
-varss = Set.toList . Set.map prettyPrint . X.free . X.allVars
-pvars = Set.toList . Set.map prettyPrint . X.bound . X.allVars
-freeVars = Set.map prettyPrint . X.freeVars
 
 -- | What C pre processor should be used.
 data CppFlags
@@ -90,90 +51,39 @@ data ParseFlags = ParseFlags
     ,hseFlags :: ParseMode -- ^ How the file is parsed (defaults to all fixities in the @base@ package and most non-conflicting extensions).
     }
 
-lensFixities :: [Fixity]
-lensFixities = concat
-    -- List as provided at https://github.com/ndmitchell/hlint/issues/416
-    [infixr_ 4 ["%%@~","<%@~","%%~","<+~","<*~","<-~","<//~","<^~","<^^~","<**~"]
-    ,infix_ 4 ["%%@=","<%@=","%%=","<+=","<*=","<-=","<//=","<^=","<^^=","<**="]
-    ,infixr_ 2 ["<<~"]
-    ,infixr_ 9 ["#."]
-    ,infixl_ 8 [".#"]
-    ,infixr_ 8 ["^!","^@!"]
-    ,infixl_ 1 ["&","<&>","??"]
-    ,infixl_ 8 ["^.","^@."]
-    ,infixr_ 9 ["<.>","<.",".>"]
-    ,infixr_ 4 ["%@~",".~","+~","*~","-~","//~","^~","^^~","**~","&&~","<>~","||~","%~"]
-    ,infix_ 4 ["%@=",".=","+=","*=","-=","//=","^=","^^=","**=","&&=","<>=","||=","%="]
-    ,infixr_ 2 ["<~"]
-    ,infixr_ 2 ["`zoom`","`magnify`"]
-    ,infixl_ 8 ["^..","^?","^?!","^@..","^@?","^@?!"]
-    ,infixl_ 8 ["^#"]
-    ,infixr_ 4 ["<#~","#~","#%~","<#%~","#%%~"]
-    ,infix_ 4 ["<#=","#=","#%=","<#%=","#%%="]
-    ,infixl_ 9 [":>"]
-    ,infixr_ 4 ["</>~","<</>~","<.>~","<<.>~"]
-    ,infix_ 4 ["</>=","<</>=","<.>=","<<.>="]
-    ,infixr_ 4 [".|.~",".&.~","<.|.~","<.&.~"]
-    ,infix_ 4 [".|.=",".&.=","<.|.=","<.&.="]
-    ]
+data ParseMode = ParseMode {
+        -- | base language (e.g. Haskell98, Haskell2010)
+        baseLanguage :: Maybe Language,
+        -- | list of extensions enabled for parsing
+        extensions :: [Extension],
+        -- | list of fixities to be aware of
+        fixities :: [FixityInfo]
+        }
 
-otherFixities :: [Fixity]
-otherFixities = concat
-    -- hspec
-    [infix_ 1 ["`shouldBe`","`shouldSatisfy`","`shouldStartWith`","`shouldEndWith`","`shouldContain`","`shouldMatchList`"
-              ,"`shouldReturn`","`shouldNotBe`","`shouldNotSatisfy`","`shouldNotContain`","`shouldNotReturn`","`shouldThrow`"]
-    -- quickcheck
-    ,infixr_ 0 ["==>"]
-    ,infix_ 4 ["==="]
-    -- esqueleto
-    ,infix_ 4 ["==."]
-    -- lattices
-    ,infixr_ 5 ["\\/"] -- \/
-    ,infixr_ 6 ["/\\"] -- /\
-    ]
-
--- Fixites from the `base` package which are currently
--- missing from `haskell-src-exts`'s baseFixities.
--- see https://github.com/haskell-suite/haskell-src-exts/pull/400
-baseNotYetInHSE :: [Fixity]
-baseNotYetInHSE = concat
-    [infixr_ 9 ["`Compose`"]
-    ,infixr_ 6 ["<>"]
-    ,infixr_ 5 ["<|"]
-    ,infixl_ 4 ["<$!>","<$","$>"]
-    ,infix_ 4 [":~:", ":~~:"]
-    ]
-
-customFixities :: [Fixity]
-customFixities =
-    infixl_ 1 ["`on`"]
-        -- see https://github.com/ndmitchell/hlint/issues/425
-        -- otherwise GTK apps using `on` at a different fixity have spurious warnings
+defaultParseMode :: ParseMode
+defaultParseMode =
+  ParseMode {
+      baseLanguage = Nothing
+    , extensions = defaultExtensions
+    , fixities = defaultFixities
+    }
 
 -- | Default value for 'ParseFlags'.
 defaultParseFlags :: ParseFlags
 defaultParseFlags = ParseFlags NoCpp defaultParseMode
-    {fixities = Just $ customFixities ++ baseFixities ++ baseNotYetInHSE ++ lensFixities ++ otherFixities
-    ,ignoreLinePragmas = False
-    ,ignoreFunctionArity = True
-    ,extensions = parseExtensions}
-
-parseFlagsNoLocations :: ParseFlags -> ParseFlags
-parseFlagsNoLocations x = x{cppFlags = case cppFlags x of Cpphs y -> Cpphs $ f y; y -> y}
-    where f x = x{boolopts = (boolopts x){locations=False}}
 
 -- | Given some fixities, add them to the existing fixities in 'ParseFlags'.
-parseFlagsAddFixities :: [Fixity] -> ParseFlags -> ParseFlags
-parseFlagsAddFixities fx x = x{hseFlags=hse{fixities = Just $ fx ++ fromMaybe [] (fixities hse)}}
+parseFlagsAddFixities :: [FixityInfo] -> ParseFlags -> ParseFlags
+parseFlagsAddFixities fx x = x{hseFlags=hse{fixities = fx ++ fixities hse}}
     where hse = hseFlags x
 
-parseFlagsSetLanguage :: (Language, [Extension]) -> ParseFlags -> ParseFlags
+parseFlagsSetLanguage :: (Maybe Language, [Extension]) -> ParseFlags -> ParseFlags
 parseFlagsSetLanguage (l, es) x = x{hseFlags=(hseFlags x){baseLanguage = l, extensions = es}}
 
 
 runCpp :: CppFlags -> FilePath -> String -> IO String
-runCpp NoCpp _ x = return x
-runCpp CppSimple _ x = return $ unlines [if "#" `isPrefixOf` trimStart x then "" else x | x <- lines x]
+runCpp NoCpp _ x = pure x
+runCpp CppSimple _ x = pure $ unlines [if "#" `isPrefixOf` trimStart x then "" else x | x <- lines x]
 runCpp (Cpphs o) file x = dropLine <$> runCpphs o file x
     where
         -- LINE pragmas always inserted when locations=True
@@ -185,16 +95,14 @@ runCpp (Cpphs o) file x = dropLine <$> runCpphs o file x
 
 -- | A parse error.
 data ParseError = ParseError
-    { parseErrorLocation :: SrcLoc -- ^ Location of the error.
+    { parseErrorLocation :: GHC.SrcSpan -- ^ Location of the error.
     , parseErrorMessage :: String  -- ^ Message about the cause of the error.
     , parseErrorContents :: String -- ^ Snippet of several lines (typically 5) including a @>@ character pointing at the faulty line.
     }
 
 -- | Result of 'parseModuleEx', representing a parsed module.
 data ModuleEx = ModuleEx {
-    hseModule :: Module SrcSpanInfo
-  , hseComments :: [Comment]
-  , ghcModule :: GHC.Located (HsSyn.HsModule HsSyn.GhcPs)
+    ghcModule :: GHC.Located (HsSyn.HsModule HsSyn.GhcPs)
   , ghcAnnotations :: GHC.ApiAnns
 }
 
@@ -202,47 +110,6 @@ data ModuleEx = ModuleEx {
 ghcComments :: ModuleEx -> [GHC.Located GHC.AnnotationComment]
 ghcComments m = concat (Map.elems $ snd (ghcAnnotations m))
 
--- | Utility called from 'parseModuleEx' and 'hseFailOpParseModuleEx'.
-mkMode :: ParseFlags -> String -> ParseMode
-mkMode flags file = (hseFlags flags){ parseFilename = file,fixities = Nothing }
-
--- | Error handler dispatcher. Invoked when HSE parsing has failed.
-failOpParseModuleEx :: String
-                    -> ParseFlags
-                    -> FilePath
-                    -> String
-                    -> SrcLoc
-                    -> String
-                    -> Maybe (GHC.SrcSpan, ErrUtils.MsgDoc)
-                    -> IO (Either ParseError ModuleEx)
-failOpParseModuleEx ppstr flags file str sl msg ghc =
-   case ghc of
-     Just err ->
-       -- GHC error info is available (assumed to have come from a
-       -- 'PFailed'). We prefer to construct a 'ParseError' value
-       -- using that.
-       ghcFailOpParseModuleEx ppstr file str err
-     Nothing ->
-       -- No GHC error info provided. This is the traditional approach
-       -- to handling errors.
-       hseFailOpParseModuleEx ppstr flags file str sl msg
-
--- | An error handler of last resort. This is invoked when HSE parsing
--- has failed but apparently GHC has not!
-hseFailOpParseModuleEx :: String
-                       -> ParseFlags
-                       -> FilePath
-                       -> String
-                       -> SrcLoc
-                       -> String
-                       -> IO (Either ParseError ModuleEx)
-hseFailOpParseModuleEx ppstr flags file str sl msg = do
-    flags <- return $ parseFlagsNoLocations flags
-    ppstr2 <- runCpp (cppFlags flags) file str
-    let pe = case parseFileContentsWithMode (mkMode flags file) ppstr2 of
-               ParseFailed sl2 _ -> context (srcLine sl2) ppstr2
-               _ -> context (srcLine sl) ppstr
-    return $ Left $ ParseError sl msg pe
 
 -- | The error handler invoked when GHC parsing has failed.
 ghcFailOpParseModuleEx :: String
@@ -251,62 +118,25 @@ ghcFailOpParseModuleEx :: String
                        -> (GHC.SrcSpan, ErrUtils.MsgDoc)
                        -> IO (Either ParseError ModuleEx)
 ghcFailOpParseModuleEx ppstr file str (loc, err) = do
-   let sl =
-         case loc of
-           GHC.RealSrcSpan r ->
-             SrcLoc { srcFilename = FastString.unpackFS (GHC.srcSpanFile r)
-                     , srcLine = GHC.srcSpanStartLine r
-                     , srcColumn = GHC.srcSpanStartCol r }
-           GHC.UnhelpfulSpan _ ->
-             SrcLoc { srcFilename = file
-                     , srcLine = 1 :: Int
-                     , srcColumn = 1 :: Int }
-       pe = context (srcLine sl) ppstr
+   let pe = case loc of
+            GHC.RealSrcSpan r -> context (GHC.srcSpanStartLine r) ppstr
+            _ -> ""
        msg = Outputable.showSDoc baseDynFlags $
                ErrUtils.pprLocErrMsg (ErrUtils.mkPlainErrMsg baseDynFlags loc err)
-   return $ Left $ ParseError sl msg pe
+   pure $ Left $ ParseError loc msg pe
 
 -- A hacky function to get fixities from HSE parse flags suitable for
 -- use by our own 'GHC.Util.Refact.Fixity' module.
 ghcFixitiesFromParseMode :: ParseMode -> [(String, GHC.Fixity)]
-ghcFixitiesFromParseMode ParseMode {fixities=Just fixities} =
-  concatMap convert fixities
-  where
-    convert (Fixity (AssocNone _) fix name) = infix_' fix [qNameToStr name]
-    convert (Fixity (AssocLeft _) fix name) = infixl_' fix [qNameToStr name]
-    convert (Fixity (AssocRight _) fix name) = infixr_' fix [qNameToStr name]
+ghcFixitiesFromParseMode = map toFixity . fixities
 
-    infixr_', infixl_', infix_' :: Int -> [String] -> [(String,GHC.Fixity)]
-    infixr_' = fixity' GHC.InfixR
-    infixl_' = fixity' GHC.InfixL
-    infix_'  = fixity' GHC.InfixN
-
-    fixity' :: GHC.FixityDirection -> Int -> [String] -> [(String, GHC.Fixity)]
-    fixity' a p = map (,GHC.Fixity (GHC.SourceText "") p a)
-
-    qNameToStr :: QName () -> String
-    qNameToStr (Special _ Cons{}) = ":"
-    qNameToStr (Special _ UnitCon{}) = "()"
-    qNameToStr (UnQual _ (X.Ident _ x)) = x
-    qNameToStr (UnQual _ (Symbol _ x)) = x
-    qNameToStr _ = ""
-ghcFixitiesFromParseMode _ = []
 
 -- GHC enabled/disabled extensions given an HSE parse mode.
-ghcExtensionsFromParseMode :: ParseMode
-                           -> ([GHC.Extension], [GHC.Extension])
-ghcExtensionsFromParseMode ParseMode {extensions=exts}=
-   partitionEithers $ mapMaybe toEither exts
-   where
-     toEither ke = case ke of
-       EnableExtension e  -> Left  <$> GhclibParserEx.readExtension (show e)
-       DisableExtension e -> Right <$> GhclibParserEx.readExtension (show e)
-       UnknownExtension ('N':'o':e) -> Right <$> GhclibParserEx.readExtension e
-       UnknownExtension e -> Left <$> GhclibParserEx.readExtension e
+ghcExtensionsFromParseMode :: ParseMode -> ([Extension], [Extension])
+ghcExtensionsFromParseMode ParseMode {extensions=exts}= (exts, [])
 
 -- GHC extensions to enable/disable given HSE parse flags.
-ghcExtensionsFromParseFlags :: ParseFlags
-                             -> ([GHC.Extension], [GHC.Extension])
+ghcExtensionsFromParseFlags :: ParseFlags -> ([Extension], [Extension])
 ghcExtensionsFromParseFlags ParseFlags {hseFlags=mode} = ghcExtensionsFromParseMode mode
 
 -- GHC fixities given HSE parse flags.
@@ -316,20 +146,29 @@ ghcFixitiesFromParseFlags ParseFlags {hseFlags=mode} = ghcFixitiesFromParseMode 
 -- These next two functions get called frorm 'Config/Yaml.hs' for user
 -- defined hint rules.
 
+parseModeToFlags :: ParseMode -> GHC.DynFlags
+parseModeToFlags parseMode =
+    flip GHC.lang_set (baseLanguage parseMode) $ foldl' GHC.xopt_unset (foldl' GHC.xopt_set baseDynFlags enable) disable
+  where
+    (enable, disable) = ghcExtensionsFromParseMode parseMode
+
 parseExpGhcWithMode :: ParseMode -> String -> GHC.ParseResult (HsSyn.LHsExpr HsSyn.GhcPs)
 parseExpGhcWithMode parseMode s =
-  let (enable, disable) = ghcExtensionsFromParseMode parseMode
-      flags = foldl' GHC.xopt_unset (foldl' GHC.xopt_set baseDynFlags enable) disable
-      fixities = ghcFixitiesFromParseMode parseMode
-  in case parseExpGhcLib s flags of
+  let fixities = ghcFixitiesFromParseMode parseMode
+  in case parseExpGhcLib s $ parseModeToFlags parseMode of
     GHC.POk pst a -> GHC.POk pst (GhclibParserEx.applyFixities fixities a)
     f@GHC.PFailed{} -> f
 
 parseImportDeclGhcWithMode :: ParseMode -> String -> GHC.ParseResult (HsSyn.LImportDecl HsSyn.GhcPs)
 parseImportDeclGhcWithMode parseMode s =
-  let (enable, disable) = ghcExtensionsFromParseMode parseMode
-      flags = foldl' GHC.xopt_unset (foldl' GHC.xopt_set baseDynFlags enable) disable
-  in parseImportGhcLib s flags
+  parseImportGhcLib s $ parseModeToFlags parseMode
+
+parseDeclGhcWithMode :: ParseMode -> String -> GHC.ParseResult (HsSyn.LHsDecl HsSyn.GhcPs)
+parseDeclGhcWithMode parseMode s =
+  let fixities = ghcFixitiesFromParseMode parseMode
+  in case parseDeclGhcLib s $ parseModeToFlags parseMode of
+    GHC.POk pst a -> GHC.POk pst (GhclibParserEx.applyFixities fixities a)
+    f@GHC.PFailed{} -> f
 
 -- | Parse a Haskell module. Applies the C pre processor, and uses
 -- best-guess fixity resolution if there are ambiguities.  The
@@ -339,86 +178,42 @@ parseImportDeclGhcWithMode parseMode s =
 parseModuleEx :: ParseFlags -> FilePath -> Maybe String -> IO (Either ParseError ModuleEx)
 parseModuleEx flags file str = timedIO "Parse" file $ do
         str <- case str of
-            Just x -> return x
+            Just x -> pure x
             Nothing | file == "-" -> getContentsUTF8
                     | otherwise -> readFileUTF8' file
-        str <- return $ dropPrefix "\65279" str -- remove the BOM if it exists, see #130
+        str <- pure $ dropPrefix "\65279" str -- remove the BOM if it exists, see #130
         ppstr <- runCpp (cppFlags flags) file str
         let enableDisableExts = ghcExtensionsFromParseFlags flags
             fixities = ghcFixitiesFromParseFlags flags -- Note : Fixities are coming from HSE parse flags.
         dynFlags <- parsePragmasIntoDynFlags baseDynFlags enableDisableExts file ppstr
         case dynFlags of
-          Right ghcFlags ->
-            case (parseFileContentsWithComments (mkMode flags file) ppstr, parseFileGhcLib file ppstr ghcFlags) of
-                (ParseOk (x, cs), GHC.POk pst a) ->
+          Right ghcFlags -> do
+            ghcFlags <- pure $ GHC.lang_set ghcFlags $ baseLanguage $ hseFlags flags
+            case parseFileGhcLib file ppstr ghcFlags of
+                GHC.POk pst a ->
                     let anns =
                           ( Map.fromListWith (++) $ GHC.annotations pst
                           , Map.fromList ((GHC.noSrcSpan, GHC.comment_q pst) : GHC.annotations_comments pst)
                           ) in
                     let a' = GhclibParserEx.applyFixities fixities a in
-                    return $ Right (ModuleEx (applyFixity fixity x) cs a' anns)
+                    pure $ Right (ModuleEx a' anns)
                 -- Parse error if GHC parsing fails (see
                 -- https://github.com/ndmitchell/hlint/issues/645).
-                (ParseOk _,  GHC.PFailed _ loc err) ->
+                GHC.PFailed _ loc err ->
                     ghcFailOpParseModuleEx ppstr file str (loc, err)
-                (ParseFailed sl msg, pfailed) ->
-                    failOpParseModuleEx ppstr flags file str sl msg $ fromPFailed pfailed
           Left msg -> do
             -- Parsing GHC flags from dynamic pragmas in the source
             -- has failed. When this happens, it's reported by
             -- exception. It's impossible or at least fiddly getting a
             -- location so we skip that for now. Synthesize a parse
             -- error.
-            let loc = SrcLoc file (1 :: Int) (1 :: Int)
-            return $ Left (ParseError loc msg (context (srcLine loc) ppstr))
+            let loc = GHC.mkSrcLoc (mkFastString file) (1 :: Int) (1 :: Int)
+            pure $ Left (ParseError (GHC.mkSrcSpan loc loc) msg ppstr)
 
-    where
-        fromPFailed (GHC.PFailed _ loc err) = Just (loc, err)
-        fromPFailed _ = Nothing
-
-        fixity = fromMaybe [] $ fixities $ hseFlags flags
 
 -- | Given a line number, and some source code, put bird ticks around the appropriate bit.
 context :: Int -> String -> String
 context lineNo src =
     unlines $ dropWhileEnd (all isSpace) $ dropWhile (all isSpace) $
     zipWith (++) ticks $ take 5 $ drop (lineNo - 3) $ lines src ++ ["","","","",""]
-    where ticks = ["  ","  ","> ","  ","  "]
-
-
----------------------------------------------------------------------
--- FIXITIES
-
--- resolve fixities later, so we don't ever get uncatchable ambiguity errors
--- if there are fixity errors, try the cheapFixities (which never fails)
-applyFixity :: [Fixity] -> Module_ -> Module_
-applyFixity base modu = descendBi f modu
-    where
-        f x = fromMaybe (cheapFixities fixs x) $ applyFixities fixs x :: Decl_
-        fixs = concatMap getFixity (moduleDecls modu) ++ base
-
-
--- Apply fixities, but ignoring any ambiguous fixity errors and skipping qualified names,
--- local infix declarations etc. Only use as a backup, if HSE gives an error.
---
--- Inspired by the code at:
--- http://hackage.haskell.org/trac/haskell-prime/attachment/wiki/FixityResolution/resolve.hs
-cheapFixities :: [Fixity] -> Decl_ -> Decl_
-cheapFixities fixs = descendBi (transform f)
-    where
-        ask = askFixity fixs
-
-        f o@(InfixApp s1 (InfixApp s2 x op1 y) op2 z)
-                | p1 == p2 && (a1 /= a2 || isAssocNone a1) = o -- Ambiguous infix expression!
-                | p1 > p2 || p1 == p2 && (isAssocLeft a1 || isAssocNone a2) = o
-                | otherwise = InfixApp s1 x op1 (f $ InfixApp s1 y op2 z)
-            where
-                (a1,p1) = ask op1
-                (a2,p2) = ask op2
-        f x = x
-
-
-askFixity :: [Fixity] -> QOp S -> (Assoc (), Int)
-askFixity xs = \k -> Map.findWithDefault (AssocLeft (), 9) (fromNamed k) mp
-    where
-        mp = Map.fromList [(s,(a,p)) | Fixity a p x <- xs, let s = fromNamed $ fmap (const an) x, s /= ""]
+    where ticks = drop (3 - lineNo) ["  ","  ","> ","  ","  "]

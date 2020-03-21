@@ -1,5 +1,5 @@
 {-# LANGUAGE PatternGuards, DeriveDataTypeable, TupleSections #-}
-{-# OPTIONS_GHC -fno-warn-missing-fields -fno-cse -O0 #-}
+{-# OPTIONS_GHC -Wno-missing-fields -fno-cse -O0 #-}
 
 module CmdLine(
     Cmd(..), getCmd,
@@ -8,14 +8,16 @@ module CmdLine(
     ) where
 
 import Control.Monad.Extra
+import Control.Exception.Extra
 import qualified Data.ByteString as BS
 import Data.Char
 import Data.List.Extra
 import Data.Maybe
 import Data.Functor
 import HSE.All(CppFlags(..))
-import Language.Haskell.Exts(defaultParseMode, baseLanguage)
-import Language.Haskell.Exts.Extension
+import GHC.LanguageExtensions.Type
+import DynFlags hiding (verbosity)
+
 import Language.Preprocessor.Cpphs
 import System.Console.ANSI(hSupportsANSI)
 import System.Console.CmdArgs.Explicit(helpText, HelpFormat(..))
@@ -32,6 +34,7 @@ import System.FilePattern
 
 import EmbedData
 import Util
+import Extension
 import Paths_hlint
 import Data.Version
 import Prelude
@@ -47,29 +50,28 @@ automatic cmd = case cmd of
     CmdMain{} -> dataDir =<< path =<< git =<< extension cmd
     CmdGrep{} -> path =<< extension cmd
     CmdTest{} -> dataDir cmd
-    _ -> return cmd
     where
-        path cmd = return $ if null $ cmdPath cmd then cmd{cmdPath=["."]} else cmd
-        extension cmd = return $ if null $ cmdExtension cmd then cmd{cmdExtension=["hs","lhs"]} else cmd
+        path cmd = pure $ if null $ cmdPath cmd then cmd{cmdPath=["."]} else cmd
+        extension cmd = pure $ if null $ cmdExtension cmd then cmd{cmdExtension=["hs","lhs"]} else cmd
         dataDir cmd
-            | cmdDataDir cmd  /= "" = return cmd
+            | cmdDataDir cmd  /= "" = pure cmd
             | otherwise = do
                 x <- getDataDir
                 b <- doesDirectoryExist x
-                if b then return cmd{cmdDataDir=x} else do
+                if b then pure cmd{cmdDataDir=x} else do
                     exe <- getExecutablePath
-                    return cmd{cmdDataDir = takeDirectory exe </> "data"}
+                    pure cmd{cmdDataDir = takeDirectory exe </> "data"}
         git cmd
             | cmdGit cmd = do
                 mgit <- findExecutable "git"
                 case mgit of
-                    Nothing -> error "Could not find git"
+                    Nothing -> errorIO "Could not find git"
                     Just git -> do
                         let args = ["ls-files", "--cached", "--others", "--exclude-standard"] ++
                                    map ("*." ++) (cmdExtension cmd)
                         files <- readProcess git args ""
-                        return cmd{cmdFiles = cmdFiles cmd ++ lines files}
-            | otherwise = return cmd
+                        pure cmd{cmdFiles = cmdFiles cmd ++ lines files}
+            | otherwise = pure cmd
 
 
 exitWithHelp :: IO a
@@ -95,7 +97,6 @@ data Cmd
         {cmdFiles :: [FilePath]    -- ^ which files to run it on, nothing = none given
         ,cmdReports :: [FilePath]        -- ^ where to generate reports
         ,cmdGivenHints :: [FilePath]     -- ^ which settignsfiles were explicitly given
-        ,cmdWithHints :: [String]        -- ^ hints that are given on the command line
         ,cmdWithGroups :: [String]       -- ^ groups that are given on the command line
         ,cmdGit :: Bool                  -- ^ use git ls-files to find files
         ,cmdColor :: ColorMode           -- ^ color the result
@@ -143,15 +144,10 @@ data Cmd
         ,cmdGivenHints :: [FilePath]     -- ^ which settings files were explicitly given
         ,cmdDataDir :: FilePath          -- ^ the data directory
         ,cmdReports :: [FilePath]        -- ^ where to generate reports
-        ,cmdWithHints :: [String]        -- ^ hints that are given on the command line
         ,cmdTempDir :: FilePath          -- ^ temporary directory to put the files in
         ,cmdQuickCheck :: Bool
         ,cmdTypeCheck :: Bool
         ,cmdWithRefactor :: FilePath
-        }
-    | CmdHSE
-        {cmdFiles :: [FilePath]
-        ,cmdLanguage :: [String]      -- ^ the extensions (may be prefixed by "No")
         }
     deriving (Data,Typeable,Show)
 
@@ -160,7 +156,6 @@ mode = cmdArgsMode $ modes
         {cmdFiles = def &= args &= typ "FILE/DIR"
         ,cmdReports = nam "report" &= opt "report.html" &= typFile &= help "Generate a report in HTML"
         ,cmdGivenHints = nam "hint" &= typFile &= help "Hint/ignore file to use"
-        ,cmdWithHints = nam "with" &= typ "HINT" &= help "Extra hints to use"
         ,cmdWithGroups = nam_ "with-group" &= typ "GROUP" &= help "Extra hint groups to use"
         ,cmdGit = nam "git" &= help "Run on files tracked by git"
         ,cmdColor = nam "colour" &= name "color" &= opt Always &= typ "always/never/auto" &= help "Color output (requires ANSI terminal; auto means on when $TERM is supported; by itself, selects always)"
@@ -205,8 +200,6 @@ mode = cmdArgsMode $ modes
                    ,""
                    ,"To check all Haskell files in 'src' and generate a report type:"
                    ,"  hlint src --report"]
-    ,CmdHSE
-        {} &= explicit &= name "hse"
     ] &= program "hlint" &= verbosity
     &=  summary ("HLint v" ++ showVersion version ++ ", (C) Neil Mitchell 2006-2020")
     where
@@ -214,38 +207,36 @@ mode = cmdArgsMode $ modes
         nam_ xs = def &= explicit &= name xs
 
 -- | Where should we find the configuration files?
---   * If someone passes cmdWithHints, only look at files they explicitly request
---   * If someone passes an explicit hint name, automatically merge in data/hlint.yaml
+--   Either we use the implicit search, or we follow the cmdGivenHints
 --   We want more important hints to go last, since they override
 cmdHintFiles :: Cmd -> IO [(FilePath, Maybe String)]
 cmdHintFiles cmd = do
-    let explicit1 = [hlintYaml | null $ cmdWithHints cmd]
-    let explicit2 = cmdGivenHints cmd
-    bad <- filterM (notM . doesFileExist) explicit2
-    let explicit2' = map (,Nothing) explicit2
+    let explicit = cmdGivenHints cmd
+    bad <- filterM (notM . doesFileExist) explicit
     when (bad /= []) $
         fail $ unlines $ "Failed to find requested hint files:" : map ("  "++) bad
-    if cmdWithHints cmd /= [] then return $ explicit1 ++ explicit2' else do
+
+    -- if the user has given any explicit hints, ignore the local ones
+    implicit <- if explicit /= [] then pure Nothing else do
         -- we follow the stylish-haskell config file search policy
         -- 1) current directory or its ancestors; 2) home directory
         curdir <- getCurrentDirectory
         -- Ignores home directory when it isn't present.
-        home <- catchIOError ((:[]) <$> getHomeDirectory) (const $ return [])
-        implicit <- findM doesFileExist $
+        home <- catchIOError ((:[]) <$> getHomeDirectory) (const $ pure [])
+        findM doesFileExist $
             map (</> ".hlint.yaml") (ancestors curdir ++ home) -- to match Stylish Haskell
-            ++ ["HLint.hs"] -- the default in HLint 1.*
-        return $ explicit1 ++ map (,Nothing) (maybeToList implicit) ++ explicit2'
+    pure $ hlintYaml : map (,Nothing) (maybeToList implicit ++ explicit)
     where
         ancestors = init . map joinPath . reverse . inits . splitPath
 
-cmdExtensions :: Cmd -> (Language, [Extension])
+cmdExtensions :: Cmd -> (Maybe Language, [Extension])
 cmdExtensions = getExtensions . cmdLanguage
 
 
 cmdCpp :: Cmd -> CppFlags
 cmdCpp cmd
     | cmdCppSimple cmd = CppSimple
-    | EnableExtension CPP `elem` snd (cmdExtensions cmd) = Cpphs defaultCpphsOptions
+    | Cpp `elem` snd (cmdExtensions cmd) = Cpphs defaultCpphsOptions
         {boolopts=defaultBoolOptions{hashline=False, stripC89=True, ansi=cmdCppAnsi cmd}
         ,includes = cmdCppInclude cmd
         ,preInclude = cmdCppFile cmd
@@ -257,8 +248,8 @@ cmdCpp cmd
 -- | Determines whether to use colour or not.
 cmdUseColour :: Cmd -> IO Bool
 cmdUseColour cmd = case cmdColor cmd of
-  Always -> return True
-  Never  -> return False
+  Always -> pure True
+  Never  -> pure False
   Auto   -> hSupportsANSI stdout
 
 
@@ -286,23 +277,23 @@ resolveFile cmd = getFile (toPredicate $ cmdIgnoreGlob cmd) (cmdPath cmd) (cmdEx
 getFile :: (FilePath -> Bool) -> [FilePath] -> [String] -> Maybe FilePath -> FilePath -> IO [FilePath]
 getFile _ path _ (Just tmpfile) "-" =
     -- make sure we don't reencode any Unicode
-    BS.getContents >>= BS.writeFile tmpfile >> return [tmpfile]
-getFile _ path _ Nothing "-" = return ["-"]
+    BS.getContents >>= BS.writeFile tmpfile >> pure [tmpfile]
+getFile _ path _ Nothing "-" = pure ["-"]
 getFile _ [] exts _ file = exitMessage $ "Couldn't find file: " ++ file
 getFile ignore (p:ath) exts t file = do
     isDir <- doesDirectoryExist $ p <\> file
     if isDir then do
         let avoidDir x = let y = takeFileName x in "_" `isPrefixOf` y || ("." `isPrefixOf` y && not (all (== '.') y))
             avoidFile x = let y = takeFileName x in "." `isPrefixOf` y || ignore x
-        xs <- listFilesInside (return . not . avoidDir) $ p <\> file
-        return [x | x <- xs, drop1 (takeExtension x) `elem` exts, not $ avoidFile x]
+        xs <- listFilesInside (pure . not . avoidDir) $ p <\> file
+        pure [x | x <- xs, drop1 (takeExtension x) `elem` exts, not $ avoidFile x]
      else do
         isFil <- doesFileExist $ p <\> file
-        if isFil then return [p <\> file]
+        if isFil then pure [p <\> file]
          else do
             res <- getModule p exts file
             case res of
-                Just x -> return [x]
+                Just x -> pure [x]
                 Nothing -> getFile ignore ath exts t file
 
 
@@ -314,28 +305,25 @@ getModule path exts x | not (any isSpace x) && all isMod xs = f exts
         isMod _ = False
         pre = path <\> joinPath xs
 
-        f [] = return Nothing
+        f [] = pure Nothing
         f (x:xs) = do
             let s = pre <.> x
             b <- doesFileExist s
-            if b then return $ Just s else f xs
-getModule _ _ _ = return Nothing
+            if b then pure $ Just s else f xs
+getModule _ _ _ = pure Nothing
 
 
-getExtensions :: [String] -> (Language, [Extension])
-getExtensions args = (lang, foldl f (if null langs then parseExtensions else []) exts)
+getExtensions :: [String] -> (Maybe Language, [Extension])
+getExtensions args = (lang, foldl f (if null langs then defaultExtensions else []) exts)
     where
-        lang = if null langs then baseLanguage defaultParseMode else fromJust $ lookup (last langs) ls
+        lang = if null langs then Nothing else Just $ fromJust $ lookup (last langs) ls
         (langs, exts) = partition (isJust . flip lookup ls) args
-        ls = [(show x, x) | x <- knownLanguages]
+        ls = [(show x, x) | x <- [Haskell98, Haskell2010]]
 
         f a "Haskell98" = []
         f a ('N':'o':x) | Just x <- readExtension x = delete x a
         f a x | Just x <- readExtension x = x : delete x a
-        f a x = UnknownExtension x : delete (UnknownExtension x) a
-
+        f a x = a -- Ignore unknown extension.
 
 readExtension :: String -> Maybe Extension
-readExtension x = case classifyExtension x of
-    UnknownExtension _ -> Nothing
-    x -> Just x
+readExtension s = flagSpecFlag <$> find (\(FlagSpec n _ _ _) -> n == s) xFlags

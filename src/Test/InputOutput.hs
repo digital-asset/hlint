@@ -24,7 +24,7 @@ import Test.Util
 testInputOutput :: ([String] -> IO ()) -> Test ()
 testInputOutput main = do
     xs <- liftIO $ getDirectoryContents "tests"
-    xs <- return $ filter ((==) ".test" . takeExtension) xs
+    xs <- pure $ filter ((==) ".test" . takeExtension) xs
     forM_ xs $ \file -> do
         ios <- liftIO $ parseInputOutputs <$> readFile ("tests" </> file)
         forM_ (zipFrom 1 ios) $ \(i,io@InputOutput{..}) -> do
@@ -71,7 +71,7 @@ checkInputOutput main InputOutput{..} = do
         handle (\(e::ExitCode) -> writeIORef code e) $
         bracket getVerbosity setVerbosity $ const $ setVerbosity Normal >> main run
     code <- liftIO $ readIORef code
-    (want,got) <- return $ matchStarStar (lines output) got
+    (want,got) <- pure $ matchStarStar (lines output) got
 
     if maybe False (/= code) exit then
         failed
@@ -96,7 +96,12 @@ checkInputOutput main InputOutput{..} = do
 -- | First string may have stars in it (the want)
 matchStar :: String -> String -> Bool
 matchStar ('*':xs) ys = any (matchStar xs) $ tails ys
-matchStar (x:xs) (y:ys) = x == y && matchStar xs ys
+matchStar ('/':x:xs) ('\\':'\\':ys) | x /= '/' = matchStar (x:xs) ys -- JSON escaped newlines
+matchStar (x:xs) (y:ys) = eq x y && matchStar xs ys
+    where
+        -- allow path differences between Windows and Linux
+        eq '/' y = isPathSeparator y
+        eq x y = x == y
 matchStar [] [] = True
 matchStar _ _ = False
 

@@ -1,5 +1,29 @@
 Changelog for HLint (* = breaking change)
 
+    #922, reduce the span of "Redundant do" to only cover the "do"
+    #919, more specific names for foldMap fusion rules
+    #918, warn on unused TypeOperators
+    #916, warn on unused InstanceSigs
+    Improve parse error context messages
+*   Most parse errors are fixed
+    #881, disable hints about maybe that are sometimes wrong
+    #909, be more careful about redundant bracket warnings
+    #905, match hints even if there is composition to the left
+    #904, suggest map/fromMaybe[] becomes maybe [] map
+*   Remove the hse command line argument, to parse a file with HSE
+    #901, warn on unused MultiWayIf
+    Don't raise a parse error if haskell-src-exts can't parse code
+    #899, warn on unused PatternSynonyms
+    #898, don't suggest removing NamedFieldPuns with record updates
+*   Make any --hint flag disable implicit .hlint.yaml search
+*   Delete the --with flag
+*   Haskell hint definitions are no longer supported (use YAML)
+*   Report hints with src-span information, e.g. file:1:1-10
+*   Delete resolveHints (it was the identity)
+*   Change to GHC types in the API
+    Add --with-group=future to add return ==> pure hint
+    #888, suggest foldr from (.) to ($) in some cases
+    #884, add more >=> operator hints
     #875, fix the extension implication information
     Add --with-group=extra to give extra library hints
     #873, add more Applicative hints

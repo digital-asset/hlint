@@ -1,12 +1,21 @@
-{-# LANGUAGE RecordWildCards, PatternGuards, FlexibleContexts #-}
 
 -- | Check the coverage of the hints given a list of Isabelle theorems
 module Test.Proof(proof) where
+
+import Config.Type
+import Control.Exception.Extra
+
+proof :: [FilePath] -> [Setting] -> FilePath -> IO ()
+proof _ _ _ = errorIO "Test.Proof is disabled."
+
+{-
 
 import Data.Tuple.Extra
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans.State
+import Language.Haskell.Exts.Util(paren, FreeVars, freeVars)
+import qualified Data.Set as Set
 import Data.Char
 import Data.List.Extra
 import Data.Maybe
@@ -143,8 +152,8 @@ hintTheorems xs =
                 f (ValidInstance cls var) x = evalState (transformM g x) True
                     where g v@Var{} | v ~= var = do
                                 b <- get; put False
-                                return $ if b then Paren an $ toNamed $ prettyPrint v ++ "::'a::" ++ cls ++ "_sym" else v
-                          g v = return v :: State Bool Exp_
+                                pure $ if b then Paren an $ toNamed $ prettyPrint v ++ "::'a::" ++ cls ++ "_sym" else v
+                          g v = pure v :: State Bool Exp_
                 f _  x = x
 
         relationship hintRuleNotes a b | any lazier hintRuleNotes = a ++ " \\<sqsubseteq> " ++ b
@@ -184,3 +193,7 @@ hintTheorems xs =
         pat x = prettyPrint x
 
         fresh x = head $ ("z":["v" ++ show i | i <- [1..]]) \\ vars x
+
+vars :: FreeVars a => a -> [String]
+vars  = Set.toList . Set.map prettyPrint . freeVars
+-}

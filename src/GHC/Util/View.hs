@@ -1,9 +1,10 @@
-{-# LANGUAGE ViewPatterns, MultiParamTypeClasses, FlexibleInstances #-}
+{-# LANGUAGE ViewPatterns, MultiParamTypeClasses, FlexibleInstances, PatternSynonyms #-}
 
 module GHC.Util.View (
-   fromParen', fromPParen'
+   fromParen'
   , View'(..)
   , Var_'(Var_'), PVar_'(PVar_'), PApp_'(PApp_'), App2'(App2'),LamConst1'(LamConst1')
+  , pattern SimpleLambda
 ) where
 
 import HsSyn
@@ -11,9 +12,10 @@ import SrcLoc
 import RdrName
 import OccName
 import BasicTypes
+import GHC.Util.RdrName (rdrNameStr')
 
 fromParen' :: LHsExpr GhcPs -> LHsExpr GhcPs
-fromParen' (LL _ (HsPar _ x)) = fromParen' x
+fromParen' (L _ (HsPar _ x)) = fromParen' x
 fromParen' x = x
 
 fromPParen' :: Pat GhcPs -> Pat GhcPs
@@ -30,17 +32,17 @@ data App2'  = NoApp2'  | App2' (LHsExpr GhcPs) (LHsExpr GhcPs) (LHsExpr GhcPs)
 data LamConst1' = NoLamConst1' | LamConst1' (LHsExpr GhcPs)
 
 instance View' (LHsExpr GhcPs) LamConst1' where
-  view' (fromParen' -> (LL _ (HsLam _ (MG _ (L _ [LL _ (Match _ LambdaExpr [LL _ WildPat {}] _
-    (GRHSs _ [LL _ (GRHS _ [] x)] (LL _ (EmptyLocalBinds _))))]) FromSource)))) = LamConst1' x
+  view' (fromParen' -> (L _ (HsLam _ (MG _ (L _ [L _ (Match _ LambdaExpr [LL _ WildPat {}] _
+    (GRHSs _ [L _ (GRHS _ [] x)] (L _ (EmptyLocalBinds _))))]) FromSource)))) = LamConst1' x
   view' _ = NoLamConst1'
 
 instance View' (LHsExpr GhcPs) Var_' where
-    view' (fromParen' -> (LL _ (HsVar _ (LL _ (Unqual x))))) = Var_' $ occNameString x
+    view' (fromParen' -> (L _ (HsVar _ (rdrNameStr' -> x)))) = Var_' x
     view' _ = NoVar_'
 
 instance View' (LHsExpr GhcPs) App2' where
-  view' (fromParen' -> LL _ (OpApp _ lhs op rhs)) = App2' op lhs rhs
-  view' (fromParen' -> LL _ (HsApp _ (LL _ (HsApp _ f x)) y)) = App2' f x y
+  view' (fromParen' -> L _ (OpApp _ lhs op rhs)) = App2' op lhs rhs
+  view' (fromParen' -> L _ (HsApp _ (L _ (HsApp _ f x)) y)) = App2' f x y
   view' _ = NoApp2'
 
 instance View' (Pat GhcPs) PVar_' where
@@ -53,3 +55,7 @@ instance View' (Pat GhcPs) PApp_' where
   view' (fromPParen' -> LL _ (ConPatIn (L _ x) (InfixCon lhs rhs))) =
     PApp_' (occNameString . rdrNameOcc $ x) [lhs, rhs]
   view' _ = NoPApp_'
+
+-- A lambda with no guards and no where clauses
+pattern SimpleLambda :: [Pat GhcPs] -> LHsExpr GhcPs -> LHsExpr GhcPs
+pattern SimpleLambda vs body <- L _ (HsLam _ (MG _ (L _ [L _ (Match _ _ vs _ (GRHSs _ [L _ (GRHS _ [] body)] (L _ (EmptyLocalBinds _))))]) _))

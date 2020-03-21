@@ -3,9 +3,9 @@
     Find and match:
 
 <TEST>
-yes = 1:2:[] -- [1,2]
+yes = 1::2::[] -- [1,2]
 yes = ['h','e','l','l','o']
-yes (1:2:[]) = 1 -- [1,2]
+yes (1::2::[]) = 1 -- [1,2]
 yes ['h','e'] = 1
 
 -- [a]++b -> a : b, but only if not in a chain of ++'s
@@ -14,10 +14,10 @@ no = "x" ++ xs
 no = [x] ++ xs ++ ys
 no = xs ++ [x] ++ ys
 yes = [if a then b else c] ++ xs -- (if a then b else c) : xs @NoRefactor: hlint bug, missing brackets in refactoring template
-yes = [1] : [2] : [3] : [4] : [5] : [] -- [[1], [2], [3], [4], [5]]
+yes = [1] :: [2] :: [3] :: [4] :: [5] :: [] -- [[1], [2], [3], [4], [5]]
 yes = if x == e then l2 ++ xs else [x] ++ check_elem xs -- x : check_elem xs
 data Yes = Yes (Maybe [Char]) -- Maybe String
-yes = y :: [Char] -> a -- String -> a
+yes = y : [Char] -> a -- String -> a
 instance C [Char]
 foo = [a b] ++ xs -- a b : xs
 foo = [myexpr | True, a] -- [myexpr | a]
@@ -58,7 +58,9 @@ import FastString
 import TysWiredIn
 
 import GHC.Util
-import Language.Haskell.GhclibParserEx.GHC.Hs.Expr
+import Language.Haskell.GhclibParserEx.GHC.Hs.Pat
+import Language.Haskell.GhclibParserEx.GHC.Hs.Expr hiding (varToStr)
+import Language.Haskell.GhclibParserEx.GHC.Hs.Types
 import Language.Haskell.GhclibParserEx.GHC.Hs.ExtendInstances
 
 listHint :: DeclHint'
@@ -75,21 +77,21 @@ listDecl x =
 -- structure of 'listComp'.
 
 listComp :: LHsExpr GhcPs -> [Idea]
-listComp o@(LL _ (HsDo _ ListComp (L _ stmts))) =
+listComp o@(L _ (HsDo _ ListComp (L _ stmts))) =
   listCompCheckGuards o ListComp stmts
-listComp o@(LL _ (HsDo _ MonadComp (L _ stmts))) =
+listComp o@(L _ (HsDo _ MonadComp (L _ stmts))) =
   listCompCheckGuards o MonadComp stmts
 
-listComp o@(view' -> App2' mp f (LL _ (HsDo _ ListComp (L _ stmts)))) =
+listComp o@(view' -> App2' mp f (L _ (HsDo _ ListComp (L _ stmts)))) =
   listCompCheckMap o mp f ListComp stmts
-listComp o@(view' -> App2' mp f (LL _ (HsDo _ MonadComp (L _ stmts)))) =
+listComp o@(view' -> App2' mp f (L _ (HsDo _ MonadComp (L _ stmts)))) =
   listCompCheckMap o mp f MonadComp stmts
 listComp _ = []
 
 listCompCheckGuards :: LHsExpr GhcPs -> HsStmtContext Name -> [ExprLStmt GhcPs] -> [Idea]
 listCompCheckGuards o ctx stmts =
   let revs = reverse stmts
-      e@(LL _ LastStmt{}) = head revs -- In a ListComp, this is always last.
+      e@(L _ LastStmt{}) = head revs -- In a ListComp, this is always last.
       xs = reverse (tail revs) in
   list_comp_aux e xs
   where
@@ -105,7 +107,7 @@ listCompCheckGuards o ctx stmts =
         o3 = noLoc $ HsDo noExt ctx (noLoc $ ys ++ [e])
         cons = mapMaybe qualCon xs
         qualCon :: ExprLStmt GhcPs -> Maybe String
-        qualCon (L _ (BodyStmt _ (LL _ (HsVar _ (L _ x))) _ _)) = Just (occNameString . rdrNameOcc $ x)
+        qualCon (L _ (BodyStmt _ (L _ (HsVar _ (L _ x))) _ _)) = Just (occNameString . rdrNameOcc $ x)
         qualCon _ = Nothing
 
 listCompCheckMap ::
@@ -114,7 +116,7 @@ listCompCheckMap o mp f ctx stmts  | varToStr mp == "map" =
     [suggest' "Move map inside list comprehension" o o2 (suggestExpr o o2)]
     where
       revs = reverse stmts
-      LL _ (LastStmt _ body b s) = head revs -- In a ListComp, this is always last.
+      L _ (LastStmt _ body b s) = head revs -- In a ListComp, this is always last.
       last = noLoc $ LastStmt noExt (noLoc $ HsApp noExt (paren' f) (paren' body)) b s
       o2 =noLoc $ HsDo noExt ctx (noLoc $ reverse (tail revs) ++ [last])
 listCompCheckMap _ _ _ _ _ = []
@@ -127,8 +129,8 @@ moveGuardsForward = reverse . f [] . reverse
   where
     f guards (x@(L _ (BindStmt _ p _ _ _)) : xs) = reverse stop ++ x : f move xs
       where (move, stop) =
-              span (if any hasPFieldsDotDot' (universeBi x)
-                       || any isPFieldWildcard' (universeBi x)
+              span (if any hasPFieldsDotDot (universeBi x)
+                       || any isPFieldWildcard (universeBi x)
                       then const False
                       else \x -> pvars' p `disjoint` vars_ x) guards
     f guards (x@(L _ BodyStmt{}):xs) = f (x:guards) xs
@@ -136,7 +138,7 @@ moveGuardsForward = reverse . f [] . reverse
     f guards xs = reverse guards ++ xs
 
     -- Fake something that works
-    vars_ x = [unsafePrettyPrint a | HsVar _ (LL _ a) <- universeBi x :: [HsExpr GhcPs]]
+    vars_ x = [unsafePrettyPrint a | HsVar _ (L _ a) <- universeBi x :: [HsExpr GhcPs]]
 
 listExp :: Bool -> LHsExpr GhcPs -> [Idea]
 listExp b (fromParen' -> x) =
@@ -171,7 +173,7 @@ pchecks = let (*) = (,) in drop1 -- see #174
     ]
 
 usePString :: Pat GhcPs -> Maybe (Pat GhcPs, [a], String)
-usePString (LL _ (ListPat _ xs)) | not $ null xs, Just s <- mapM fromPChar' xs =
+usePString (LL _ (ListPat _ xs)) | not $ null xs, Just s <- mapM fromPChar xs =
   let literal = noLoc $ LitPat noExt (HsString NoSourceText (fsLit (show s)))
   in Just (literal, [], unsafePrettyPrint literal)
 usePString _ = Nothing
@@ -187,7 +189,7 @@ usePList =
         )
   . f True ['a'..'z']
   where
-    f first _ x | patToStr' x == "[]" = if first then Nothing else Just []
+    f first _ x | patToStr x == "[]" = if first then Nothing else Just []
     f first (ident:cs) (view' -> PApp_' ":" [a, b]) = ((a, g ident a) :) <$> f False cs b
     f first _ _ = Nothing
 
@@ -195,7 +197,7 @@ usePList =
     g c (getLoc -> loc) = (([c], loc), VarPat noExt (noLoc $ mkVarUnqual (fsLit [c])))
 
 useString :: p -> LHsExpr GhcPs -> Maybe (LHsExpr GhcPs, [a], String)
-useString b (LL _ (ExplicitList _ _ xs)) | not $ null xs, Just s <- mapM fromChar xs =
+useString b (L _ (ExplicitList _ _ xs)) | not $ null xs, Just s <- mapM fromChar xs =
   let literal = noLoc (HsLit noExt (HsString NoSourceText (fsLit (show s))))
   in Just (literal, [], unsafePrettyPrint literal)
 useString _ _ = Nothing
@@ -212,12 +214,12 @@ useList b =
   . f True ['a'..'z']
   where
     f first _ x | varToStr x == "[]" = if first then Nothing else Just []
-    f first (ident:cs) (view' -> App2' c a b) | varToStr c == ":" =
+    f first (ident:cs) (view' -> App2' c a b) | varToStr c == "::" =
           ((a, g ident a) :) <$> f False cs b
     f first _ _ = Nothing
 
     g :: Char -> LHsExpr GhcPs -> (String, LHsExpr GhcPs)
-    g c p = ([c], LL (getLoc p) (unLoc $ strToVar [c]))
+    g c p = ([c], L (getLoc p) (unLoc $ strToVar [c]))
 
 useCons :: View' a App2' => Bool -> a -> Maybe (LHsExpr GhcPs, [(String, R.SrcSpan)], String)
 useCons False (view' -> App2' op x y) | varToStr op == "++"
@@ -230,7 +232,7 @@ useCons False (view' -> App2' op x y) | varToStr op == "++"
   where
     f :: LHsExpr GhcPs ->
       Maybe (LHsExpr GhcPs, LHsExpr GhcPs -> LHsExpr GhcPs)
-    f (LL _ (ExplicitList _ _ [x]))=
+    f (L _ (ExplicitList _ _ [x]))=
       Just (x, \v -> if isApp x then v else paren' v)
     f _ = Nothing
 
@@ -248,7 +250,7 @@ typeString =
   noLoc $ HsTyVar noExt NotPromoted (noLoc (mkVarUnqual (fsLit "String")))
 
 stringType :: LHsDecl GhcPs  -> [Idea]
-stringType (LL _ x) = case x of
+stringType (L _ x) = case x of
   InstD _ ClsInstD{
     cid_inst=
         ClsInstDecl{cid_binds=x, cid_tyfam_insts=y, cid_datafam_insts=z}} ->
@@ -258,8 +260,7 @@ stringType (LL _ x) = case x of
     f x = concatMap g $ childrenBi x
 
     g :: LHsType GhcPs -> [Idea]
-    g e@(fromTyParen' -> x) = [suggest' "Use String" x (transform f x)
+    g e@(fromTyParen -> x) = [suggest' "Use String" x (transform f x)
                               rs | not . null $ rs]
       where f x = if astEq x typeListChar then typeString else x
             rs = [Replace Type (toSS' t) [] (unsafePrettyPrint typeString) | t <- universe x, astEq t typeListChar]
-stringType _ = [] -- {-# COMPLETE LL #-}

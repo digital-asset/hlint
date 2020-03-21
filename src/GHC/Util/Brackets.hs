@@ -1,4 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses , FlexibleInstances, FlexibleContexts #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns -Wno-overlapping-patterns #-}
+
 module GHC.Util.Brackets (Brackets'(..), isApp,isOpApp,isAnyApp) where
 
 import HsSyn
@@ -34,8 +36,8 @@ instance Brackets' (LHsExpr GhcPs) where
   -- result in a "naked" section. Consequently, given an expression,
   -- when stripping brackets (c.f. 'Hint.Brackets'), don't remove the
   -- paren's surrounding a section - they are required.
-  remParen' (LL _ (HsPar _ (LL _ SectionL{}))) = Nothing
-  remParen' (LL _ (HsPar _ (LL _ SectionR{}))) = Nothing
+  remParen' (L _ (HsPar _ (L _ SectionL{}))) = Nothing
+  remParen' (L _ (HsPar _ (L _ SectionR{}))) = Nothing
 
   -- Note [DA 'HasField' expressions]
   -- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -48,17 +50,17 @@ instance Brackets' (LHsExpr GhcPs) where
   -- preprocessor algorithm. That said, we might succeed with a bit
   -- more analysis/effort, in which case, these clauses could be
   -- removed.
-  remParen' (LL _ (HsPar _ (LL _ (HsApp _ (LL _ (HsAppType _ (LL _ (HsVar _ (L _ x))) _)) _))))
+  remParen' (L _ (HsPar _ (L _ (HsApp _ (L _ (HsAppType _ (L _ (HsVar _ (L _ x))) _)) _))))
     | x `elem` [var_getField, var_getFieldPrim]  = Nothing
-  remParen' (LL _ (HsPar _ (LL _ (HsApp _ (LL _ (HsApp _ (LL _ (HsAppType _ (LL _ (HsVar _ (L _ x))) _)) _)) _))))
+  remParen' (L _ (HsPar _ (L _ (HsApp _ (L _ (HsApp _ (L _ (HsAppType _ (L _ (HsVar _ (L _ x))) _)) _)) _))))
     | x `elem` [var_setField, var_setFieldPrim]  = Nothing
 
-  remParen' (LL _ (HsPar _ x)) = Just x
+  remParen' (L _ (HsPar _ x)) = Just x
   remParen' _ = Nothing
 
   addParen' e = noLoc $ HsPar noExt e
 
-  isAtom' (LL _ x) = case x of
+  isAtom' (L _ x) = case x of
       HsVar{} -> True
       HsUnboundVar{} -> True
       HsRecFld{} -> True
@@ -89,25 +91,28 @@ instance Brackets' (LHsExpr GhcPs) where
         isNegativeOverLit OverLit {ol_val=HsIntegral i} = il_neg i
         isNegativeOverLit OverLit {ol_val=HsFractional f} = fl_neg f
         isNegativeOverLit _ = False
-  isAtom' _ = False -- '{-# COMPLETE LL #-}'
+  isAtom' _ = False -- '{-# COMPLETE L #-}'
 
   needBracket' i parent child -- Note: i is the index in children, not in the AST.
      | isAtom' child = False
-     | isSection parent, LL _ HsApp{} <- child = False
-     | LL _ OpApp{} <- parent, LL _ HsApp{} <- child = False
-     | LL _ HsLet{} <- parent, LL _ HsApp{} <- child = False
-     | LL _ HsDo{} <- parent = False
-     | LL _ ExplicitList{} <- parent = False
-     | LL _ ExplicitTuple{} <- parent = False
-     | LL _ HsIf{} <- parent, isAnyApp child = False
-     | LL _ HsApp{} <- parent, i == 0, LL _ HsApp{} <- child = False
-     | LL _ ExprWithTySig{} <- parent, i == 0, isApp child = False
-     | LL _ RecordCon{} <- parent = False
-     | LL _ RecordUpd{} <- parent, i /= 0 = False
-     | LL _ HsCase{} <- parent, i /= 0 || isAnyApp child = False
-     | LL _ HsLam{} <- parent = False -- might be either the RHS of a PViewPat, or the lambda body (neither needs brackets)
-     | LL _ HsPar{} <- parent = False
-     | LL _ HsDo {} <- parent = False
+     | isSection parent, L _ HsApp{} <- child = False
+     | L _ OpApp{} <- parent, L _ HsApp{} <- child = False
+     | L _ ExplicitList{} <- parent = False
+     | L _ ExplicitTuple{} <- parent = False
+     | L _ HsIf{} <- parent, isAnyApp child = False
+     | L _ HsApp{} <- parent, i == 0, L _ HsApp{} <- child = False
+     | L _ ExprWithTySig{} <- parent, i == 0, isApp child = False
+     | L _ RecordCon{} <- parent = False
+     | L _ RecordUpd{} <- parent, i /= 0 = False
+
+     -- These all have view patterns embedded within them, or are naturally followed by ->, so we have to watch out for
+     -- @(x::y) -> z@ which is valid, as either a type annotation, or a view pattern.
+     | L _ HsLet{} <- parent, isApp child = False
+     | L _ HsDo{} <- parent, isAnyApp child = False
+     | L _ HsLam{} <- parent, isAnyApp child = False
+     | L _ HsCase{} <- parent, isAnyApp child = False
+
+     | L _ HsPar{} <- parent = False
      | otherwise = True
 
 instance Brackets' (Pat GhcPs) where
@@ -137,7 +142,7 @@ instance Brackets' (Pat GhcPs) where
       isSignedLit HsFloatPrim{} = True
       isSignedLit HsDoublePrim{} = True
       isSignedLit _ = False
-  isAtom' _ = False -- '{-# COMPLETE LL #-}'
+  isAtom' _ = False -- '{-# COMPLETE L #-}'
 
   needBracket' _ parent child
     | isAtom' child = False
@@ -146,11 +151,11 @@ instance Brackets' (Pat GhcPs) where
     | otherwise = True
 
 instance Brackets' (LHsType GhcPs) where
-  remParen' (LL _ (HsParTy _ x)) = Just x
+  remParen' (L _ (HsParTy _ x)) = Just x
   remParen' _ = Nothing
   addParen' e = noLoc $ HsParTy noExt e
 
-  isAtom' (LL _ x) = case x of
+  isAtom' (L _ x) = case x of
       HsParTy{} -> True
       HsTupleTy{} -> True
       HsListTy{} -> True
@@ -161,18 +166,18 @@ instance Brackets' (LHsType GhcPs) where
       HsSpliceTy{} -> True
       HsWildCardTy{} -> True
       _ -> False
-  isAtom' _ = False -- '{-# COMPLETE LL #-}'
+  isAtom' _ = False -- '{-# COMPLETE L #-}'
 
   needBracket' _ parent child
     | isAtom' child = False
 -- a -> (b -> c) is not a required bracket, but useful for documentation about arity etc.
 --        | TyFun{} <- parent, i == 1, TyFun{} <- child = False
-    | LL _ HsFunTy{} <- parent, LL _ HsAppTy{} <- child = False
-    | LL _ HsTupleTy{} <- parent = False
-    | LL _ HsListTy{} <- parent = False
-    | LL _ HsExplicitTupleTy{} <- parent = False
-    | LL _ HsListTy{} <- parent = False
-    | LL _ HsExplicitListTy{} <- parent = False
-    | LL _ HsOpTy{} <- parent, LL _ HsAppTy{} <- child = False
-    | LL _ HsParTy{} <- parent = False
+    | L _ HsFunTy{} <- parent, L _ HsAppTy{} <- child = False
+    | L _ HsTupleTy{} <- parent = False
+    | L _ HsListTy{} <- parent = False
+    | L _ HsExplicitTupleTy{} <- parent = False
+    | L _ HsListTy{} <- parent = False
+    | L _ HsExplicitListTy{} <- parent = False
+    | L _ HsOpTy{} <- parent, L _ HsAppTy{} <- child = False
+    | L _ HsParTy{} <- parent = False
     | otherwise = True

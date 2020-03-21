@@ -47,7 +47,7 @@ process config = do
   -- Feedback on the compiler used for building hlint.
   stack "exec -- ghc --version"
   stack "--no-terminal --interleaved-output build"
-  stack "run -- test"
+  stack "run -- test --with-refact=\"disable-refact-tests\""
   where
       stackYamlFlag :: String -- One of "" or, --stack-yaml=file.
       stackYamlFlag = stackYamlOpt config

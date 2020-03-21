@@ -1,13 +1,14 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 module HLint(hlint, readAllSettings) where
 
 import Control.Applicative
 import Control.Monad.Extra
-import Control.Exception
+import Control.Exception.Extra
 import Control.Concurrent.Extra
 import System.Console.CmdArgs.Verbosity
+import GHC.Util.DynFlags
 import Data.List.Extra
 import GHC.Conc
 import System.Exit
@@ -49,6 +50,7 @@ import EmbedData
 --   on your server with untrusted input.
 hlint :: [String] -> IO [Idea]
 hlint args = do
+    initGlobalDynFlags
     cmd <- getCmd args
     case cmd of
         CmdMain{} -> do
@@ -57,27 +59,9 @@ hlint args = do
             when (cmdTiming cmd) $ do
                 printTimings
                 putStrLn $ "Took " ++ showDuration time
-            return $ if cmdNoExitCode cmd then [] else xs
-        CmdGrep{} -> hlintGrep cmd >> return []
-        CmdHSE{}  -> hlintHSE  cmd >> return []
-        CmdTest{} -> hlintTest cmd >> return []
-
-hlintHSE :: Cmd -> IO ()
-hlintHSE c@CmdHSE{..} = do
-    v <- getVerbosity
-    forM_ cmdFiles $ \x -> do
-        putStrLn $ "Parse result of " ++ x ++ ":"
-        let (lang,exts) = cmdExtensions c
-        -- We deliberately don't use HSE.All here to avoid any bugs in HLint
-        -- polluting our bug reports (which is the main use of HSE)
-        res <- parseFileWithMode defaultParseMode{baseLanguage=lang, extensions=exts} x
-        case res of
-            x@ParseFailed{} -> print x
-            ParseOk m -> case v of
-                Loud -> print m
-                Quiet -> print $ prettyPrint m
-                _ -> print $ void m
-        putStrLn ""
+            pure $ if cmdNoExitCode cmd then [] else xs
+        CmdGrep{} -> hlintGrep cmd >> pure []
+        CmdTest{} -> hlintTest cmd >> pure []
 
 hlintTest :: Cmd -> IO ()
 hlintTest cmd@CmdTest{..} =
@@ -100,7 +84,7 @@ hlintGrep cmd@CmdGrep{..} =
      else do
         files <- concatMapM (resolveFile cmd Nothing) cmdFiles
         if null files then
-            error "No files found"
+            errorIO "No files found"
          else
             runGrep cmdPattern (cmdParseFlags cmd) files
 
@@ -112,7 +96,7 @@ withVerbosity new act = do
 hlintMain :: [String] -> Cmd -> IO [Idea]
 hlintMain args cmd@CmdMain{..}
     | cmdDefault = do
-        ideas <- if null cmdFiles then return [] else withVerbosity Quiet $
+        ideas <- if null cmdFiles then pure [] else withVerbosity Quiet $
             runHlintMain args cmd{cmdJson=False,cmdSerialise=False,cmdRefactor=False} Nothing
         let bad = nubOrd $ map ideaHint ideas
         if null bad then putStr defaultYaml else do
@@ -120,10 +104,10 @@ hlintMain args cmd@CmdMain{..}
             let group2 = "# Warnings currently triggered by your code" :
                          ["- ignore: {name: " ++ show x ++ "}" | x <- bad]
             putStr $ unlines $ intercalate ["",""] $ group1:group2:groups
-        return []
+        pure []
     | null cmdFiles && not (null cmdFindHints) = do
         hints <- concatMapM (resolveFile cmd Nothing) cmdFindHints
-        mapM_ (putStrLn . fst <=< computeSettings (cmdParseFlags cmd)) hints >> return []
+        mapM_ (putStrLn . fst <=< computeSettings (cmdParseFlags cmd)) hints >> pure []
     | null cmdFiles =
         exitWithHelp
     | cmdRefactor =
@@ -150,13 +134,12 @@ readAllSettings args1 cmd@CmdMain{..} = do
     settings1 <-
         readFilesConfig $
         files
-        ++ [("CommandLine.hs",Just x) | x <- cmdWithHints]
         ++ [("CommandLine.yaml",Just (enableGroup x)) | x <- cmdWithGroups]
     let args2 = [x | SettingArgument x <- settings1]
-    cmd@CmdMain{..} <- if null args2 then return cmd else getCmd $ args2 ++ args1 -- command line arguments are passed last
+    cmd@CmdMain{..} <- if null args2 then pure cmd else getCmd $ args2 ++ args1 -- command line arguments are passed last
     settings2 <- concatMapM (fmap snd . computeSettings (cmdParseFlags cmd)) cmdFindHints
-    settings3 <- return [SettingClassify $ Classify Ignore x "" "" | x <- cmdIgnore]
-    return (cmd, settings1 ++ settings2 ++ settings3)
+    let settings3 = [SettingClassify $ Classify Ignore x "" "" | x <- cmdIgnore]
+    pure (cmd, settings1 ++ settings2 ++ settings3)
     where
         enableGroup groupName =
             unlines
@@ -167,11 +150,11 @@ readAllSettings args1 cmd@CmdMain{..} = do
 
 runHints :: [String] -> [Setting] -> Cmd -> IO [Idea]
 runHints args settings cmd@CmdMain{..} = do
-    j <- if cmdThreads == 0 then getNumProcessors else return cmdThreads
+    j <- if cmdThreads == 0 then getNumProcessors else pure cmdThreads
     withNumCapabilities j $ do
         let outStrLn = whenNormal . putStrLn
         ideas <- getIdeas cmd settings
-        ideas <- return $ if cmdShowAll then ideas else  filter (\i -> ideaSeverity i /= Ignore) ideas
+        ideas <- pure $ if cmdShowAll then ideas else  filter (\i -> ideaSeverity i /= Ignore) ideas
         if cmdJson then
             putStrLn $ showIdeasJson ideas
          else if cmdCC then
@@ -183,19 +166,19 @@ runHints args settings cmd@CmdMain{..} = do
             handleRefactoring ideas cmdFiles cmd
          else do
             usecolour <- cmdUseColour cmd
-            showItem <- if usecolour then showANSI else return show
+            showItem <- if usecolour then showANSI else pure show
             mapM_ (outStrLn . showItem) ideas
             handleReporting ideas cmd
-        return ideas
+        pure ideas
 
 getIdeas :: Cmd -> [Setting] -> IO [Idea]
 getIdeas cmd@CmdMain{..} settings = do
-    settings <- return $ settings ++ map (Builtin . fst) builtinHints
+    settings <- pure $ settings ++ map (Builtin . fst) builtinHints
     let flags = cmdParseFlags cmd
     ideas <- if cmdCross
         then applyHintFiles flags settings cmdFiles
         else concat <$> parallel cmdThreads [evaluateList =<< applyHintFile flags settings x Nothing | x <- cmdFiles]
-    return $ if not (null cmdOnly)
+    pure $ if not (null cmdOnly)
         then [i | i <- ideas, ideaHint i `elem` cmdOnly]
         else ideas
 
@@ -211,7 +194,7 @@ handleRefactoring ideas files cmd@CmdMain{..} =
             withTempFile $ \f -> do
                 writeFile f hints
                 exitWith =<< runRefactoring path file f cmdRefactorOptions
-        _ -> error "Refactor flag can only be used with an individual file"
+        _ -> errorIO "Refactor flag can only be used with an individual file"
 
 
 handleReporting :: [Idea] -> Cmd -> IO ()
@@ -227,4 +210,4 @@ handleReporting showideas cmd@CmdMain{..} = do
 evaluateList :: [a] -> IO [a]
 evaluateList xs = do
     evaluate $ length xs
-    return xs
+    pure xs

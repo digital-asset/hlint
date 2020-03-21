@@ -15,22 +15,24 @@
 module Language.Haskell.HLint4(
     hlint, applyHints,
     -- * Idea data type
-    Idea(..), Severity(..), Note(..),
+    Idea(..), Severity(..), Note(..), FixityInfo,
     -- * Settings
     Classify(..),
     getHLintDataDir, autoSettings, argsSettings,
     findSettings, readSettingsFile,
     -- * Hints
-    Hint, resolveHints,
+    Hint,
     -- * Parse files
     ModuleEx, parseModuleEx, createModuleEx, defaultParseFlags, parseFlagsAddFixities, ParseError(..), ParseFlags(..), CppFlags(..)
     ) where
 
 import Config.Type
 import Config.Read
+import Control.Exception.Extra
 import Idea
 import qualified Apply as H
 import HLint
+import Fixity
 import HSE.All
 import Hint.All hiding (resolveHints)
 import qualified Hint.All as H
@@ -66,12 +68,8 @@ getHLintDataDir = getDataDir
 autoSettings :: IO (ParseFlags, [Classify], Hint)
 autoSettings = do
     (fixities, classify, hints) <- findSettings (readSettingsFile Nothing) Nothing
-    return (parseFlagsAddFixities fixities defaultParseFlags, classify, hints)
+    pure (parseFlagsAddFixities fixities defaultParseFlags, classify, hints)
 
-
--- | The identity function. In previous versions of HLint this function was useful. Now, it isn't.
-resolveHints :: Hint -> Hint
-resolveHints = id
 
 -- | A version of 'autoSettings' which respects some of the arguments supported by HLint.
 --   If arguments unrecognised by HLint are used it will result in an error.
@@ -81,14 +79,14 @@ argsSettings args = do
     cmd <- getCmd args
     case cmd of
         CmdMain{..} -> do
-            -- FIXME: Two things that could be supported (but aren't) are 'cmdGivenHints' and 'cmdWithHints'.
+            -- FIXME: One thing that could be supported (but isn't) is 'cmdGivenHints'
             (_,settings) <- readAllSettings args cmd
             let (fixities, classify, hints) = splitSettings settings
             let flags = parseFlagsSetLanguage (cmdExtensions cmd) $ parseFlagsAddFixities fixities $
                         defaultParseFlags{cppFlags = cmdCpp cmd}
             let ignore = [Classify Ignore x "" "" | x <- cmdIgnore]
-            return (flags, classify ++ ignore, hints)
-        _ -> error "Can only invoke autoSettingsArgs with the root process"
+            pure (flags, classify ++ ignore, hints)
+        _ -> errorIO "Can only invoke autoSettingsArgs with the root process"
 
 
 -- | Given a directory (or 'Nothing' to imply 'getHLintDataDir'), and a module name
@@ -100,23 +98,23 @@ argsSettings args = do
 readSettingsFile :: Maybe FilePath -> String -> IO (FilePath, Maybe String)
 readSettingsFile dir x
     | takeExtension x `elem` [".yml",".yaml"] = do
-        dir <- maybe getHLintDataDir return dir
-        return (dir </> x, Nothing)
+        dir <- maybe getHLintDataDir pure dir
+        pure (dir </> x, Nothing)
     | Just x <- "HLint." `stripPrefix` x = do
-        dir <- maybe getHLintDataDir return dir
-        return (dir </> x <.> "hs", Nothing)
-    | otherwise = return (x <.> "hs", Nothing)
+        dir <- maybe getHLintDataDir pure dir
+        pure (dir </> x <.> "hs", Nothing)
+    | otherwise = pure (x <.> "hs", Nothing)
 
 
 -- | Given a function to load a module (typically 'readSettingsFile'), and a module to start from
 --   (defaults to @hlint.yaml@) find the information from all settings files.
-findSettings :: (String -> IO (FilePath, Maybe String)) -> Maybe String -> IO ([Fixity], [Classify], Hint)
+findSettings :: (String -> IO (FilePath, Maybe String)) -> Maybe String -> IO ([FixityInfo], [Classify], Hint)
 findSettings load start = do
     (file,contents) <- load $ fromMaybe "hlint.yaml" start
     splitSettings <$> readFilesConfig [(file,contents)]
 
 -- | Split a list of 'Setting' for separate use in parsing and hint resolution
-splitSettings :: [Setting] -> ([Fixity], [Classify], Hint)
+splitSettings :: [Setting] -> ([FixityInfo], [Classify], Hint)
 splitSettings xs =
     ([x | Infix x <- xs]
     ,[x | SettingClassify x <- xs]
@@ -148,5 +146,4 @@ _docs = do
 createModuleEx:: GHC.ApiAnns -> Located (GHC.HsModule GHC.GhcPs) -> ModuleEx
 createModuleEx anns ast =
   -- Use builtin fixities.
-  ModuleEx empty [] (GhclibParserEx.applyFixities [] ast) anns
-   where empty = Module an Nothing [] [] []
+  ModuleEx (GhclibParserEx.applyFixities [] ast) anns
