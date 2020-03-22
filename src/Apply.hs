@@ -6,6 +6,7 @@ import Data.Monoid
 import HSE.All
 import Hint.All
 import GHC.Util
+import Data.Generics.Uniplate.Data
 import Idea
 import Data.Tuple.Extra
 import Data.Either
@@ -24,7 +25,7 @@ import Prelude
 applyHintFile :: ParseFlags -> [Setting] -> FilePath -> Maybe String -> IO [Idea]
 applyHintFile flags s file src = do
     res <- parseModuleApply flags s file src
-    return $ case res of
+    pure $ case res of
         Left err -> [err]
         Right m -> executeHints s [m]
 
@@ -33,7 +34,7 @@ applyHintFile flags s file src = do
 applyHintFiles :: ParseFlags -> [Setting] -> [FilePath] -> IO [Idea]
 applyHintFiles flags s files = do
     (err, ms) <- partitionEithers <$> mapM (\file -> parseModuleApply flags s file Nothing) files
-    return $ err ++ executeHints s ms
+    pure $ err ++ executeHints s ms
 
 
 -- | Given a way of classifying results, and a 'Hint', apply to a set of modules generating a list of 'Idea's.
@@ -48,32 +49,29 @@ applyHints cs = applyHintsReal $ map SettingClassify cs
 
 applyHintsReal :: [Setting] -> Hint -> [ModuleEx] -> [Idea]
 applyHintsReal settings hints_ ms = concat $
-    [ map (classify classifiers . removeRequiresExtensionNotes (hseModule m)) $
-        order [] (hintModule hints settings nm m) `merge`
-        concat [order [fromNamed d] $ decHints d | d <- moduleDecls (hseModule m)] `merge`
-        concat [order (maybeToList $ declName d) $ decHints' d | d <- hsmodDecls $ GHC.unLoc $ ghcModule m]
-    | (nm, m) <- mns
-    , let classifiers = cls ++ mapMaybe readPragma (universeBi (hseModule m)) ++ concatMap readComment (ghcComments m)
+    [ map (classify classifiers . removeRequiresExtensionNotes m) $
+        order [] (hintModule hints settings nm' m) `merge`
+        concat [order (maybeToList $ declName d) $ decHints d | d <- hsmodDecls $ GHC.unLoc $ ghcModule m]
+    | m <- ms
+    , let classifiers = cls ++ mapMaybe readPragma (universeBi (ghcModule m)) ++ concatMap readComment (ghcComments m)
     , seq (length classifiers) True -- to force any errors from readPragma or readComment
-    , let decHints = hintDecl hints settings nm m -- partially apply
     , (nm',m') <- mns'
-    , let decHints' = hintDecl' hints settings nm' m' -- partially apply
-    , let order n = map (\i -> i{ideaModule= f $ moduleName (hseModule m) : ideaModule i, ideaDecl = f $ n ++ ideaDecl i}) . sortOn ideaSpan
+    , let decHints = hintDecl hints settings nm' m' -- partially apply
+    , let order n = map (\i -> i{ideaModule = f $ modName (ghcModule m) : ideaModule i, ideaDecl = f $ n ++ ideaDecl i}) . sortOn ideaSpan
     , let merge = mergeBy (comparing ideaSpan)] ++
-    [map (classify cls) (hintModules hints settings mns)]
+    [map (classify cls) (hintModules hints settings mns')]
     where
         f = nubOrd . filter (/= "")
         cls = [x | SettingClassify x <- settings]
-        mns = map (\x -> (scopeCreate (hseModule x), x)) ms
-        mns' = map (\x -> (scopeCreate' (GHC.unLoc $ ghcModule x), x)) ms
+        mns' = map (\x -> (scopeCreate (GHC.unLoc $ ghcModule x), x)) ms
         hints = (if length ms <= 1 then noModules else id) hints_
         noModules h = h{hintModules = \_ _ -> []} `mappend` mempty{hintModule = \s a b -> hintModules h s [(a,b)]}
 
 -- If the hint has said you RequiresExtension Foo, but Foo is enabled, drop the note
-removeRequiresExtensionNotes :: Module_ -> Idea -> Idea
+removeRequiresExtensionNotes :: ModuleEx -> Idea -> Idea
 removeRequiresExtensionNotes m = \x -> x{ideaNote = filter keep $ ideaNote x}
     where
-        exts = Set.fromList $ map fromNamed $ moduleExtensions m
+        exts = Set.fromList $ concatMap snd $ langExts $ pragmas $ ghcAnnotations m
         keep (RequiresExtension x) = not $ x `Set.member` exts
         keep _ = True
 
@@ -87,9 +85,9 @@ parseModuleApply :: ParseFlags -> [Setting] -> FilePath -> Maybe String -> IO (E
 parseModuleApply flags s file src = do
     res <- parseModuleEx (parseFlagsAddFixities [x | Infix x <- s] flags) file src
     case res of
-      Right r -> return $ Right r
+      Right r -> pure $ Right r
       Left (ParseError sl msg ctxt) ->
-            return $ Left $ classify [x | SettingClassify x <- s] $ rawIdeaN Error "Parse error" (mkSrcSpan sl sl) ctxt Nothing []
+            pure $ Left $ classify [x | SettingClassify x <- s] $ rawIdeaN Error msg sl ctxt Nothing []
 
 
 -- | Find which hints a list of settings implies.

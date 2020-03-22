@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase, NamedFieldPuns #-}
 
 {-
     Suggest removal of unnecessary extensions
@@ -25,14 +25,41 @@ main = mdo x <- y; return y
 {-# LANGUAGE RecursiveDo #-} \
 main = do {rec {x <- return 1}; print x}
 {-# LANGUAGE ImplicitParams, BangPatterns #-} \
-sort :: (?cmp :: a -> a -> Bool) => [a] -> [a] \
+sort : (?cmp : a -> a -> Bool) => [a] -> [a] \
 sort !f = undefined
 {-# LANGUAGE KindSignatures #-} \
-data Set (cxt :: * -> *) a = Set [a]
+data Set (cxt : * -> *) a = Set [a]
 {-# LANGUAGE BangPatterns #-} \
 foo x = let !y = x in y
 {-# LANGUAGE BangPatterns #-} \
 data Foo = Foo !Int --
+{-# LANGUAGE TypeOperators #-} \
+data (<+>) a b = Foo a b
+{-# LANGUAGE TypeOperators #-} \
+data Foo a b = a :+ b --
+{-# LANGUAGE TypeOperators #-} \
+type (<+>) a b = Foo a b
+{-# LANGUAGE TypeOperators #-} \
+type Foo a b = a :+ b
+{-# LANGUAGE TypeOperators, TypeFamilies #-} \
+type family Foo a b : Type where Foo a b = a :+ b
+{-# LANGUAGE TypeOperators, TypeFamilies #-} \
+type family Foo a b : Type where Foo a b = (<+>) a b -- {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators, TypeFamilies #-} \
+class Foo a where data (<+>) a
+{-# LANGUAGE TypeOperators, TypeFamilies #-} \
+class Foo a where foo : a -> Int <+> Bool
+{-# LANGUAGE TypeOperators #-} \
+class (<+>) a where
+{-# LANGUAGE TypeOperators #-} \
+foo : Int -> Double <+> Bool \
+foo x = y
+{-# LANGUAGE TypeOperators #-} \
+foo : Int -> (<+>) Double Bool \
+foo x = y --
+{-# LANGUAGE TypeOperators #-} \
+(<+>) : Int -> Int -> Int \
+x <+> y = x + y --
 {-# LANGUAGE RecordWildCards #-} \
 record field = Record{..}
 {-# LANGUAGE RecordWildCards #-} \
@@ -71,17 +98,24 @@ newtype Micro = Micro Int deriving Generic -- {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-} \
 instance Class Int where {newtype MyIO a = MyIO a deriving NewClass}
 {-# LANGUAGE UnboxedTuples #-} \
-f :: Int -> (# Int, Int #)
+f : Int -> (# Int, Int #)
 {-# LANGUAGE UnboxedTuples #-} \
-f :: x -> (x, x); f x = (x, x) --
+f : x -> (x, x); f x = (x, x) --
 {-# LANGUAGE UnboxedTuples #-} \
 f x = case x of (# a, b #) -> a
 {-# LANGUAGE GeneralizedNewtypeDeriving,UnboxedTuples #-} \
 newtype T m a = T (m a) deriving (PrimMonad)
+{-# LANGUAGE InstanceSigs #-} \
+instance Eq a => Eq (T a) where \
+  (==) : T a -> T a -> Bool \
+  (==) (T x) (T y) = x==y
+{-# LANGUAGE InstanceSigs #-} \
+instance Eq a => Eq (T a) where \
+  (==) (T x) (T y) = x==y --
 {-# LANGUAGE DefaultSignatures #-} \
-class Val a where; val :: a --
+class Val a where; val : a --
 {-# LANGUAGE DefaultSignatures #-} \
-class Val a where; val :: a; default val :: Int
+class Val a where; val : a; default val : Int
 {-# LANGUAGE TypeApplications #-} \
 foo = id --
 {-# LANGUAGE TypeApplications #-} \
@@ -132,20 +166,35 @@ main = case () of x -> x --
 main = case () of x -> x --
 {-# LANGUAGE PolyKinds, KindSignatures #-} -- {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE PolyKinds, KindSignatures #-} \
-data Set (cxt :: * -> *) a = Set [a] -- @Note Extension KindSignatures is implied by PolyKinds
+data Set (cxt : * -> *) a = Set [a] -- @Note Extension KindSignatures is implied by PolyKinds
 {-# LANGUAGE QuasiQuotes, OverloadedStrings #-} \
 main = putStrLn [f|{T.intercalate "blah" []}|]
+{-# LANGUAGE NamedFieldPuns #-} \
+foo = x{bar}
+{-# LANGUAGE PatternSynonyms #-} \
+module Foo (pattern Bar) where x = 42
+{-# LANGUAGE PatternSynonyms #-} \
+import Foo (pattern Bar); x = 42
+{-# LANGUAGE PatternSynonyms #-} \
+pattern Foo s <- Bar s _ where Foo s = Bar s s
+{-# LANGUAGE PatternSynonyms #-} \
+x = 42 --
+{-# LANGUAGE MultiWayIf #-} \
+x = if | b1 -> v1 | b2 -> v2 | otherwise -> v3
+{-# LANGUAGE MultiWayIf #-} \
+x = if b1 then v1 else if b2 then v2 else v3 --
 </TEST>
 -}
 
 
 module Hint.Extensions(extensionsHint) where
 
-import Hint.Type(ModuHint, rawIdea',Severity(Warning),Note(..),toSS',ghcAnnotations,ghcModule,extensionImpliedBy,extensionImplies)
-import Language.Haskell.Exts.Extension
+import Hint.Type(ModuHint, rawIdea',Severity(Warning),Note(..),toSS',ghcAnnotations,ghcModule)
+import Extension
 
 import Data.Generics.Uniplate.Operations
 import Control.Monad.Extra
+import Data.Char
 import Data.List.Extra
 import Data.Ratio
 import Data.Data
@@ -153,6 +202,7 @@ import Refact.Types
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
+import DynFlags
 import SrcLoc
 import HsSyn
 import BasicTypes
@@ -160,8 +210,14 @@ import Class
 import RdrName
 import OccName
 import ForeignCall
+
 import GHC.Util
+import GHC.LanguageExtensions.Type
+
+import Language.Haskell.GhclibParserEx.GHC.Hs.Pat
 import Language.Haskell.GhclibParserEx.GHC.Hs.Expr
+import Language.Haskell.GhclibParserEx.GHC.Hs.Types
+import Language.Haskell.GhclibParserEx.GHC.Hs.Decls
 
 extensionsHint :: ModuHint
 extensionsHint _ x =
@@ -169,21 +225,38 @@ extensionsHint _ x =
         sl
         (comment (mkLangExts sl exts))
         (Just newPragma)
-        ( [RequiresExtension $ prettyExtension gone | x <- before \\ after, gone <- Map.findWithDefault [] x disappear] ++
-            [ Note $ "Extension " ++ prettyExtension x ++ " is " ++ reason x
+        ( [RequiresExtension (show gone) | x <- before \\ after, gone <- Map.findWithDefault [] x disappear] ++
+            [ Note $ "Extension " ++ show x ++ " is " ++ reason x
             | x <- explainedRemovals])
         [ModifyComment (toSS' (mkLangExts sl exts)) newPragma]
-    | (LL sl _,  exts) <- langExts $ pragmas (ghcAnnotations x)
-    , let before = map parseExtension exts
+    | (L sl _,  exts) <- langExts $ pragmas (ghcAnnotations x)
+    , let before = map lookupExt (filterEnabled exts)
     , let after = filter (`Set.member` keep) before
     , before /= after
     , let explainedRemovals
             | null after && not (any (`Map.member` implied) before) = []
             | otherwise = before \\ after
     , let newPragma =
-            if null after then "" else comment (mkLangExts sl $ map prettyExtension after)
+            if null after then "" else comment (mkLangExts sl $ map show after)
     ]
   where
+    filterEnabled :: [String] -> [String]
+    filterEnabled  = filter (not . isPrefixOf "No")
+
+    lookupExt :: String -> Extension
+    lookupExt s =
+      case find (\(FlagSpec n _ _ _) -> n == s) xFlags of
+        Just f -> flagSpecFlag f
+        Nothing ->
+          -- Validity checking of extensions happens when the parse
+          -- tree is constructed (via 'getOptions' called from
+          -- 'parsePragmasIntoDynFlags'). If an invalid extension is
+          -- encountered, it results in a parse error (see
+          -- tests/ignore-parse-error3.hs in
+          -- 'tests/parse-error.test'). Thus we are assured that the
+          -- argument 's' must be in 'xFlags' and this case impossible.
+          error ("IMPOSSIBLE: Unrecognized language extension '" ++ s ++ "'")
+
     usedTH :: Bool
     usedTH = used TemplateHaskell (ghcModule x) || used QuasiQuotes (ghcModule x)
       -- If TH or QuasiQuotes is on, can use all other extensions
@@ -191,9 +264,10 @@ extensionsHint _ x =
 
     -- All the extensions defined to be used.
     extensions :: Set.Set Extension
-    extensions = Set.fromList [ parseExtension e
-                              | let exts = concatMap snd $ langExts (pragmas (ghcAnnotations x))
+    extensions = Set.fromList $ [ lookupExt e
+                              | let exts = concatMap (filterEnabled . snd) $ langExts (pragmas (ghcAnnotations x))
                               , e <- exts ]
+
     -- Those extensions we detect to be useful.
     useful :: Set.Set Extension
     useful = if usedTH then extensions else Set.filter (`usedExt` ghcModule x) extensions
@@ -203,25 +277,27 @@ extensionsHint _ x =
     implied = Map.fromList
         [ (e, a)
         | e <- Set.toList useful
-        , a:_ <- [filter (`Set.member` useful) $ extensionImpliedBy e]]
+        , a:_ <- [filter (`Set.member` useful) $ extensionImpliedEnabledBy e]
+        ]
     -- Those we should keep.
     keep :: Set.Set Extension
     keep =  useful `Set.difference` Map.keysSet implied
     -- The meaning of (a,b) is a used to imply b, but has gone, so
     -- suggest enabling b.
+    disappear :: Map.Map Extension [Extension]
     disappear =
         Map.fromListWith (++) $
         nubOrdOn snd -- Only keep one instance for each of a.
         [ (e, [a])
         | e <- Set.toList $ extensions `Set.difference` keep
-        , a <- extensionImplies e
+        , a <- fst $ extensionImplies e
         , a `Set.notMember` useful
         , usedTH || usedExt a (ghcModule x)
         ]
     reason :: Extension -> String
     reason x =
       case Map.lookup x implied of
-        Just a -> "implied by " ++ prettyExtension a
+        Just a -> "implied by " ++ show a
         Nothing -> "not used"
 
 deriveHaskell = ["Eq","Ord","Enum","Ix","Bounded","Read","Show"]
@@ -238,13 +314,12 @@ deriveStock :: [String]
 deriveStock = deriveHaskell ++ deriveGenerics ++ deriveCategory
 
 usedExt :: Extension -> Located (HsModule GhcPs) -> Bool
-usedExt (EnableExtension x) = used x
-usedExt (UnknownExtension "NumDecimals") = hasS isWholeFrac
-usedExt (UnknownExtension "DeriveLift") = hasDerive ["Lift"]
-usedExt (UnknownExtension "DeriveAnyClass") = not . null . derivesAnyclass . derives
-usedExt _ = const True
+usedExt NumDecimals = hasS isWholeFrac
+usedExt DeriveLift = hasDerive ["Lift"]
+usedExt DeriveAnyClass = not . null . derivesAnyclass . derives
+usedExt x = used x
 
-used :: KnownExtension -> Located (HsModule GhcPs) -> Bool
+used :: Extension -> Located (HsModule GhcPs) -> Bool
 used RecursiveDo = hasS isMDo ||^ hasS isRecStmt
 used ParallelListComp = hasS isParComp
 used FunctionalDependencies = hasT (un :: FunDep (Located RdrName))
@@ -258,11 +333,11 @@ used EmptyDataDecls = hasS f
 used EmptyCase = hasS f
   where
     f :: HsExpr GhcPs -> Bool
-    f (HsCase _ _ (MG _ (LL _ []) _)) = True
-    f (HsLamCase _ (MG _ (LL _ []) _)) = True
+    f (HsCase _ _ (MG _ (L _ []) _)) = True
+    f (HsLamCase _ (MG _ (L _ []) _)) = True
     f _ = False
 used KindSignatures = hasT (un :: HsKind GhcPs)
-used BangPatterns = hasS isPBangPat' ||^ hasS isStrictMatch
+used BangPatterns = hasS isPBangPat ||^ hasS isStrictMatch
   where
     isStrictMatch :: HsMatchContext RdrName -> Bool
     isStrictMatch FunRhs{mc_strictness=SrcStrict} = True
@@ -278,17 +353,33 @@ used PatternGuards = hasS f
   where
     f :: GRHS GhcPs (LHsExpr GhcPs) -> Bool
     f (GRHS _ xs _) = g xs
-    f _ = False -- new ctor
+    f _ = False -- Extension constructor
     g :: [GuardLStmt GhcPs] -> Bool
     g [] = False
-    g [LL _ BodyStmt{}] = False
+    g [L _ BodyStmt{}] = False
     g _ = True
-used StandaloneDeriving = hasS isDerivD'
-used PatternSignatures = hasS isPatTypeSig'
-used RecordWildCards = hasS hasFieldsDotDot ||^ hasS hasPFieldsDotDot'
-used RecordPuns = hasS isPFieldPun' ||^ hasS isFieldPun
-used NamedFieldPuns = hasS isPFieldPun' ||^ hasS isFieldPun
-used UnboxedTuples = has isUnboxedTuple' ||^ has (== Unboxed) ||^ hasS isDeriving
+used StandaloneDeriving = hasS isDerivD
+used TypeOperators = hasS tyOpInSig ||^ hasS tyOpInDecl
+  where
+    tyOpInSig :: HsType GhcPs -> Bool
+    tyOpInSig = \case
+      HsOpTy{} -> True; _ -> False
+
+    tyOpInDecl :: HsDecl GhcPs -> Bool
+    tyOpInDecl = \case
+      (TyClD _ (FamDecl _ FamilyDecl{fdLName})) -> isOp fdLName
+      (TyClD _ SynDecl{tcdLName}) -> isOp tcdLName
+      (TyClD _ DataDecl{tcdLName}) -> isOp tcdLName
+      (TyClD _ ClassDecl{tcdLName, tcdATs}) -> any isOp (tcdLName : [fdLName famDecl | L _ famDecl <- tcdATs])
+      _ -> False
+
+    isOp :: LIdP GhcPs -> Bool
+    isOp name = case occNameString (rdrNameOcc (unLoc name)) of
+      (c:_) -> not $ isAlpha c || c == '_'
+      _ -> False
+used RecordWildCards = hasS hasFieldsDotDot ||^ hasS hasPFieldsDotDot
+used RecordPuns = hasS isPFieldPun ||^ hasS isFieldPun ||^ hasS isFieldPunUpdate
+used UnboxedTuples = hasS isUnboxedTuple ||^ hasS (== Unboxed) ||^ hasS isDeriving
     where
         -- detect if there are deriving declarations or data ... deriving stuff
         -- by looking for the deriving strategy both contain (even if its Nothing)
@@ -300,15 +391,24 @@ used PackageImports = hasS f
         f :: ImportDecl GhcPs -> Bool
         f ImportDecl{ideclPkgQual=Just _} = True
         f _ = False
-used QuasiQuotes = hasS isQuasiQuote ||^ hasS isTyQuasiQuote'
-used ViewPatterns = hasS isPViewPat'
-used DefaultSignatures = hasS isClsDefSig'
+used QuasiQuotes = hasS isQuasiQuote ||^ hasS isTyQuasiQuote
+used ViewPatterns = hasS isPViewPat
+used InstanceSigs = hasS f
+  where
+    f :: HsDecl GhcPs -> Bool
+    f (InstD _ decl) = hasT (un :: Sig GhcPs) decl
+    f _ = False
+used DefaultSignatures = hasS isClsDefSig
 used DeriveDataTypeable = hasDerive ["Data","Typeable"]
 used DeriveFunctor = hasDerive ["Functor"]
 used DeriveFoldable = hasDerive ["Foldable"]
 used DeriveTraversable = hasDerive ["Traversable","Foldable","Functor"]
 used DeriveGeneric = hasDerive ["Generic","Generic1"]
 used GeneralizedNewtypeDeriving = not . null . derivesNewtype' . derives
+used MultiWayIf = hasS f
+  where
+    f :: HsExpr GhcPs -> Bool
+    f = \case HsMultiIf{} -> True; _ -> False
 used LambdaCase = hasS isLCase
 used TupleSections = hasS isTupleSection
 used OverloadedStrings = hasS isString
@@ -327,9 +427,16 @@ used MagicHash = hasS f ||^ hasS isPrimLiteral
     where
       f :: RdrName -> Bool
       f s = "#" `isSuffixOf` (occNameString . rdrNameOcc) s
--- For forwards compatibility, if things ever get added to the
--- extension enumeration.
-used x = usedExt $ UnknownExtension $ show x
+used PatternSynonyms = hasS isPatSynBind ||^ hasS isPatSynIE
+    where
+      isPatSynBind :: HsBind GhcPs -> Bool
+      isPatSynBind PatSynBind{} = True
+      isPatSynBind _ = False
+
+      isPatSynIE :: IEWrappedName RdrName -> Bool
+      isPatSynIE IEPattern{} = True
+      isPatSynIE _ = False
+used _= const True
 
 hasDerive :: [String] -> Located (HsModule GhcPs) -> Bool
 hasDerive want = any (`elem` want) . derivesStock' . derives
@@ -357,37 +464,34 @@ addDerives _ (Just s) xs = case s of
 addDerives nt _ xs = mempty
     {derivesStock' = stock
     ,derivesAnyclass = other
-    ,derivesNewtype' = if maybe True isNewType' nt then filter (`notElem` noDeriveNewtype) xs else []}
+    ,derivesNewtype' = if maybe True isNewType nt then filter (`notElem` noDeriveNewtype) xs else []}
     where (stock, other) = partition (`elem` deriveStock) xs
 
 derives :: Located (HsModule GhcPs) -> Derives
-derives (LL _ m) =  mconcat $ map decl (childrenBi m) ++ map idecl (childrenBi m)
+derives (L _ m) =  mconcat $ map decl (childrenBi m) ++ map idecl (childrenBi m)
   where
     idecl :: Located (DataFamInstDecl GhcPs) -> Derives
-    idecl (LL _ (DataFamInstDecl (HsIB _ FamEqn {feqn_rhs=HsDataDefn {dd_ND=dn, dd_derivs=(LL _ ds)}}))) = g dn ds
+    idecl (L _ (DataFamInstDecl (HsIB _ FamEqn {feqn_rhs=HsDataDefn {dd_ND=dn, dd_derivs=(L _ ds)}}))) = g dn ds
     idecl _ = mempty
 
     decl :: LHsDecl GhcPs -> Derives
-    decl (LL _ (TyClD _ (DataDecl _ _ _ _ HsDataDefn {dd_ND=dn, dd_derivs=(LL _ ds)}))) = g dn ds -- Data declaration.
-    decl (LL _ (DerivD _ (DerivDecl _ (HsWC _ sig) strategy _))) = addDerives Nothing (fmap unLoc strategy) [derivedToStr sig] -- A deriving declaration.
+    decl (L _ (TyClD _ (DataDecl _ _ _ _ HsDataDefn {dd_ND=dn, dd_derivs=(L _ ds)}))) = g dn ds -- Data declaration.
+    decl (L _ (DerivD _ (DerivDecl _ (HsWC _ sig) strategy _))) = addDerives Nothing (fmap unLoc strategy) [derivedToStr sig] -- A deriving declaration.
     decl _ = mempty
 
     g :: NewOrData -> [LHsDerivingClause GhcPs] -> Derives
-    g dn ds = mconcat [addDerives (Just dn) (fmap unLoc strategy) $ map derivedToStr tys | LL _ (HsDerivingClause _ strategy (LL _ tys)) <- ds]
+    g dn ds = mconcat [addDerives (Just dn) (fmap unLoc strategy) $ map derivedToStr tys | L _ (HsDerivingClause _ strategy (L _ tys)) <- ds]
 
     derivedToStr :: LHsSigType GhcPs -> String
     derivedToStr (HsIB _ t) = ih t
       where
         ih :: LHsType GhcPs -> String
-        ih (LL _ (HsQualTy _ _ a)) = ih a
-        ih (LL _ (HsParTy _ a)) = ih a
-        ih (LL _ (HsAppTy _ a _)) = ih a
-        ih (LL _ (HsTyVar _ _ a)) = unsafePrettyPrint $ unqual' a
-        ih (LL _ a) = unsafePrettyPrint a -- I don't anticipate this case is called.
-        ih _ = "" -- {-# COMPLETE LL #-}
+        ih (L _ (HsQualTy _ _ a)) = ih a
+        ih (L _ (HsParTy _ a)) = ih a
+        ih (L _ (HsAppTy _ a _)) = ih a
+        ih (L _ (HsTyVar _ _ a)) = unsafePrettyPrint $ unqual' a
+        ih (L _ a) = unsafePrettyPrint a -- I don't anticipate this case is called.
     derivedToStr _ = "" -- new ctor
-
-derives _ = mempty -- {-# COMPLETE LL #-}
 
 un = undefined
 
@@ -397,11 +501,13 @@ hasT2' ~(t1,t2) = hasT t1 ||^ hasT t2
 hasS :: (Data x, Data a) => (a -> Bool) -> x -> Bool
 hasS test = any test . universeBi
 
-has f = any f . universeBi
-
 -- Only whole number fractions are permitted by NumDecimals extension.
 -- Anything not-whole raises an error.
 isWholeFrac :: HsExpr GhcPs -> Bool
 isWholeFrac (HsLit _ (HsRat _ (FL _ _ v) _)) = denominator v == 1
 isWholeFrac (HsOverLit _ (OverLit _ (HsFractional (FL _ _ v)) _)) = denominator v == 1
 isWholeFrac _ = False
+
+-- Field puns in updates have a different type to field puns in constructions
+isFieldPunUpdate :: HsRecField' (AmbiguousFieldOcc GhcPs) (LHsExpr GhcPs) -> Bool
+isFieldPunUpdate = \case HsRecField {hsRecPun=True} -> True; _ -> False

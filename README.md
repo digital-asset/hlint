@@ -14,6 +14,7 @@ Bugs can be reported [on the bug tracker](https://github.com/ndmitchell/hlint/is
 * HLint operates on each module at a time in isolation, as a result HLint does not know about types or which names are in scope.
 * The presence of `seq` may cause some hints (i.e. eta-reduction) to change the semantics of a program.
 * Some transformed programs may require additional type signatures, particularly if the transformations trigger the monomorphism restriction or involve rank-2 types.
+* Sometimes HLint will change the code in a way that causes values to default to different types, which may change the behaviour.
 * The `RebindableSyntax` extension can cause HLint to suggest incorrect changes.
 * HLint turns on many language extensions so it can parse more documents, occasionally some break otherwise legal syntax - e.g. `{-#INLINE foo#-}` doesn't work with `MagicHash`, `foo $bar` means something different with `TemplateHaskell`. These extensions can be disabled with `-XNoMagicHash` or `-XNoTemplateHaskell` etc.
 * HLint doesn't run any custom preprocessors, e.g. [markdown-unlit](https://hackage.haskell.org/package/markdown-unlit) or [record-dot-preprocessor](https://hackage.haskell.org/package/record-dot-preprocessor), so code making use of them will usually fail to parse.
@@ -95,7 +96,7 @@ HLint is integrated into lots of places:
 By supplying the `--refactor` flag hlint can automatically apply most
 suggestions. Instead of a list of hints, hlint will instead output the
 refactored file on stdout. In order to do this, it is necessary to have the
-`refactor` executable on you path. `refactor` is provided by the
+`refactor` executable on your path. `refactor` is provided by the
 [`apply-refact`](https://github.com/mpickering/apply-refact) package,
 it uses the GHC API in order to transform source files given a list of
 refactorings to apply. Hlint directly calls the executable to apply the

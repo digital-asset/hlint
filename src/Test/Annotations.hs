@@ -16,23 +16,28 @@ import System.IO.Extra
 import Control.Monad.IO.Class
 import Data.Function
 import Data.Yaml
+import HSE.All
 import qualified Data.ByteString.Char8 as BS
 
 import Config.Type
 import Idea
 import Apply
 import Refact
-import HSE.All
 import Test.Util
 import Data.Functor
 import Prelude
 import Config.Yaml
+import GHC.Util.Outputable
+import FastString
+
+import qualified GHC.Util as GHC
+import qualified SrcLoc as GHC
 
 
 -- Input, Output
 -- Output = Nothing, should not match
 -- Output = Just xs, should match xs
-data TestCase = TestCase SrcLoc Refactor String (Maybe String) [Setting] deriving (Show)
+data TestCase = TestCase GHC.SrcLoc Refactor String (Maybe String) [Setting] deriving (Show)
 
 data Refactor = TestRefactor | SkipRefactor deriving (Eq, Show)
 
@@ -45,12 +50,12 @@ testAnnotations setting file rpath = do
             ideas <- liftIO $ try_ $ do
                 res <- applyHintFile defaultParseFlags (setting ++ additionalSettings) file $ Just inp
                 evaluate $ length $ show res
-                return res
+                pure res
 
             -- the hints from data/Test.hs are really fake hints we don't actually deploy
             -- so don't record them
             when (takeFileName file /= "Test.hs") $
-                either (const $ return ()) addIdeas ideas
+                either (const $ pure ()) addIdeas ideas
 
             let good = case (out, ideas) of
                     (Nothing, Right []) -> True
@@ -59,17 +64,18 @@ testAnnotations setting file rpath = do
             let bad =
                     [failed $
                         ["TEST FAILURE (" ++ show (either (const 1) length ideas) ++ " hints generated)"
-                        ,"SRC: " ++ showSrcLoc loc
+                        ,"SRC: " ++ unsafePrettyPrint loc
                         ,"INPUT: " ++ inp] ++
-                        map ("OUTPUT: " ++) (either (return . show) (map show) ideas) ++
+                        map ("OUTPUT: " ++) (either (pure . show) (map show) ideas) ++
                         ["WANTED: " ++ fromMaybe "<failure>" out]
                         | not good] ++
                     [failed
                         ["TEST FAILURE (BAD LOCATION)"
-                        ,"SRC: " ++ showSrcLoc loc
+                        ,"SRC: " ++ unsafePrettyPrint loc
                         ,"INPUT: " ++ inp
                         ,"OUTPUT: " ++ show i]
-                        | i@Idea{..} <- fromRight [] ideas, let SrcLoc{..} = getPointLoc ideaSpan, srcFilename == "" || srcLine == 0 || srcColumn == 0]
+                        | i@Idea{..} <- fromRight [] ideas, let GHC.SrcLoc{..} = GHC.srcSpanStart ideaSpan, srcFilename == "" || srcLine == 0 || srcColumn == 0]
+                        -- TODO: shouldn't these checks be == -1 instead?
 
             let skipRefactor = notNull bad || refact == SkipRefactor
             badRefactor <- if skipRefactor then pure [] else liftIO $ do
@@ -79,7 +85,7 @@ testAnnotations setting file rpath = do
                     _ -> pure []
                 pure $ [failed $
                            ["TEST FAILURE (BAD REFACTORING)"
-                           ,"SRC: " ++ showSrcLoc loc
+                           ,"SRC: " ++ unsafePrettyPrint loc
                            ,"INPUT: " ++ inp] ++ refactorErr
                            | notNull refactorErr]
 
@@ -127,7 +133,7 @@ parseTestFile file =
 
 
 parseTest :: Refactor -> String -> Int -> String -> [Setting] -> TestCase
-parseTest refact file i x = uncurry (TestCase (SrcLoc file i 0) refact) $ f x
+parseTest refact file i x = uncurry (TestCase (GHC.mkSrcLoc (mkFastString file) i 0) refact) $ f x
     where
         f x | Just x <- stripPrefix "<COMMENT>" x = first ("--"++) $ f x
         f (' ':'-':'-':xs) | null xs || " " `isPrefixOf` xs = ("", Just $ trimStart xs)

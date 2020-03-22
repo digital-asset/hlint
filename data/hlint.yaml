@@ -141,7 +141,8 @@
     - warn: {lhs: foldl (++) "", rhs: concat, note: IncreasesLaziness}
     - warn: {lhs: foldl f (head x) (tail x), rhs: foldl1 f x}
     - warn: {lhs: foldr f (last x) (init x), rhs: foldr1 f x}
-    - warn: {lhs: "foldr (\\c a -> x : a) []", rhs: "map (\\c -> x)"}
+    - warn: {lhs: "foldr (\\c a -> x :: a) []", rhs: "map (\\c -> x)"}
+    - warn: {lhs: foldr (.) id l z, rhs: foldr ($) z l}
     - warn: {lhs: span (not . p), rhs: break p}
     - warn: {lhs: break (not . p), rhs: span p}
     - warn: {lhs: "(takeWhile p x, dropWhile p x)", rhs: span p x, note: DecreasesLaziness}
@@ -173,11 +174,12 @@
     - hint: {lhs: any (const True) x, rhs: not (null x), name: Use null}
     - hint: {lhs: length x /= 0, rhs: not (null x), note: IncreasesLaziness, name: Use null}
     - hint: {lhs: 0 /= length x, rhs: not (null x), note: IncreasesLaziness, name: Use null}
-    - hint: {lhs: "\\x -> [x]", rhs: "(:[])", name: "Use :"}
+    - hint: {lhs: "\\x -> [x]", rhs: "(::[])", name: "Use :"}
     - hint: {lhs: map f (zip x y), rhs: zipWith (curry f) x y, side: not (isApp f)}
+    - hint: {lhs: "map f (fromMaybe [] x)", rhs: "maybe [] (map f) x"}
     - warn: {lhs: not (elem x y), rhs: notElem x y}
     - hint: {lhs: foldr f z (map g x), rhs: foldr (f . g) z x, name: Fuse foldr/map}
-    - warn: {lhs: "x ++ concatMap (' ':) y", rhs: "unwords (x:y)"}
+    - warn: {lhs: "x ++ concatMap (' '::) y", rhs: "unwords (x:y)"}
     - warn: {lhs: intercalate " ", rhs: unwords}
     - hint: {lhs: concat (intersperse x y), rhs: intercalate x y, side: notEq x " "}
     - hint: {lhs: concat (intersperse " " x), rhs: unwords x}
@@ -239,8 +241,8 @@
     - warn: {lhs: foldMap id, rhs: fold}
     - warn: {lhs: fold (fmap f x), rhs: foldMap f x}
     - warn: {lhs: fold (map f x), rhs: foldMap f x}
-    - warn: {lhs: foldMap f (fmap g x), rhs: foldMap (f . g) x}
-    - warn: {lhs: foldMap f (map g x), rhs: foldMap (f . g) x}
+    - warn: {lhs: foldMap f (fmap g x), rhs: foldMap (f . g) x, name: Fuse foldMap/fmap}
+    - warn: {lhs: foldMap f (map g x), rhs: foldMap (f . g) x, name: Fuse foldMap/map}
 
     # BY
 
@@ -443,6 +445,8 @@
     - warn: {lhs: flip (=<<), rhs: (>>=)}
     - hint: {lhs: \x -> f x >>= g, rhs: f Control.Monad.>=> g}
     - hint: {lhs: \x -> f =<< g x, rhs: f Control.Monad.<=< g}
+    - hint: {lhs: (>>= f) . g, rhs: f Control.Monad.<=< g}
+    - hint: {lhs: (f =<<) . g, rhs: f Control.Monad.<=< g}
     - warn: {lhs: a >> forever a, rhs: forever a}
     - hint: {lhs: liftM2 id, rhs: ap}
     - warn: {lhs: liftA2 f (return x), rhs: fmap (f x)}
@@ -534,7 +538,7 @@
     - warn: {lhs: fromMaybe True, rhs: (Just False /=)}
     - warn: {lhs: not (isNothing x), rhs: isJust x}
     - warn: {lhs: not (isJust x), rhs: isNothing x}
-    - warn: {lhs: "maybe [] (:[])", rhs: maybeToList}
+    - warn: {lhs: "maybe [] (::[])", rhs: maybeToList}
     - warn: {lhs: catMaybes (map f x), rhs: mapMaybe f x}
     - warn: {lhs: catMaybes (fmap f x), rhs: mapMaybe f x}
     - hint: {lhs: case x of Nothing -> y; Just a -> a , rhs: Data.Maybe.fromMaybe y x, side: isAtom y, name: Replace case with fromMaybe}
@@ -563,8 +567,9 @@
     - hint: {lhs: case m of Nothing -> Nothing; Just x -> x, rhs: Control.Monad.join m}
     - hint: {lhs: maybe Nothing id, rhs: join}
     - hint: {lhs: maybe Nothing f x, rhs: f =<< x}
-    - hint: {lhs: maybe (f x) (f . g), rhs: f . maybe x g, note: IncreasesLaziness, name: Too strict maybe}
-    - hint: {lhs: maybe (f x) f y, rhs: f (Data.Maybe.fromMaybe x y), note: IncreasesLaziness, name: Too strict maybe}
+#    Disabled because the f might be show or similar, see https://github.com/ndmitchell/hlint/issues/881
+#    - hint: {lhs: maybe (f x) (f . g), rhs: f . maybe x g, note: IncreasesLaziness, name: Too strict maybe}
+#    - hint: {lhs: maybe (f x) f y, rhs: f (Data.Maybe.fromMaybe x y), note: IncreasesLaziness, name: Too strict maybe}
     - warn: {lhs: maybe x f (fmap g y), rhs: maybe x (f . g) y, name: Redundant fmap}
     - warn: {lhs: isJust (fmap f x), rhs: isJust x}
     - warn: {lhs: isNothing (fmap f x), rhs: isNothing x}
@@ -854,10 +859,6 @@
     - warn: {lhs: concat <$> forM a b, rhs: concatForM a b}
     - warn: {lhs: fmap concat (forM_ a b), rhs: concatForM_ a b}
     - warn: {lhs: concat <$> forM_ a b, rhs: concatForM_ a b}
-    - warn: {lhs: Control.Arrow.(***), rhs: Data.Tuple.(***)}
-    - warn: {lhs: Control.Arrow.(&&&), rhs: Data.Tuple.(&&&)}
-    - warn: {lhs: Control.Arrow.first, rhs: Data.Tuple.first}
-    - warn: {lhs: Control.Arrow.second, rhs: Data.Tuple.second}
     - warn: {lhs: "maybe (pure ()) b a", rhs: "whenJust a b"}
     - warn: {lhs: "maybe (return ()) b a", rhs: "whenJust a b"}
     - warn: {lhs: "maybeM (pure ()) b a", rhs: "whenJustM a b"}
@@ -913,6 +914,13 @@
     - warn: {lhs: "drop 1", rhs: "drop1"}
     - warn: {lhs: "dropEnd 1", rhs: "dropEnd1"}
 
+# hints that will be enabled in future
+- group:
+    name: future
+    enabled: false
+    rules:
+    - warn: {lhs: return, rhs: pure}
+
 - group:
     name: dollar
     enabled: false
@@ -940,7 +948,6 @@
 # yes = f x where f x = concat . map head -- concatMap head
 # yes = concat . map f . g -- concatMap f . g
 # yes = concat $ map f x -- concatMap f x
-# yes = "test" ++ concatMap (' ':) ["of","this"] -- unwords ("test":["of","this"])
 # yes = if f a then True else b -- f a || b
 # yes = not (a == b) -- a /= b
 # yes = not (a /= b) -- a == b
@@ -980,7 +987,7 @@
 # yes = if foo then do stuff; moreStuff; lastOfTheStuff else return () \
 #     -- Control.Monad.when foo $ do stuff ; moreStuff ; lastOfTheStuff @NoRefactor: hlint bug
 # yes = if foo then stuff else return () -- Control.Monad.when foo stuff
-# yes = foo $ \(a, b) -> (a, y + b) -- Data.Bifunctor.second ((+) y) @NoRefactor: hlint bug, subts = []
+# yes = foo $ \(a, b) -> (a, y + b) -- Data.Bifunctor.second ((+) y)
 # no  = foo $ \(a, b) -> (a, a + b)
 # yes = map (uncurry (+)) $ zip [1 .. 5] [6 .. 10] -- zipWith (curry (uncurry (+))) [1 .. 5] [6 .. 10]
 # yes = curry (uncurry (+)) -- (+)
@@ -1008,7 +1015,8 @@
 # yes = case x z of Nothing -> y; Just pat -> pat -- Data.Maybe.fromMaybe y (x z)
 # yes = if p then s else return () -- Control.Monad.when p s
 # warn = a $$$$ b $$$$ c ==> a . b $$$$$ c
-# yes = when (not . null $ asdf) -- unless (null asdf) @NoRefactor: hlint bug, subts = []
+# yes = when (not . null $ asdf) -- unless (null asdf)
+# yes = (foo . bar . when) (not . null $ asdf) -- (foo . bar) (unless (null asdf))
 # yes = id 1 -- 1
 # yes = case concat (map f x) of [] -> [] -- concatMap f x
 # yes = [v | v <- xs] -- xs
@@ -1028,10 +1036,13 @@
 # test = \ a -> f a >>= \ b -> return (a, b)
 # fooer input = catMaybes . map Just $ input -- mapMaybe Just
 # yes = mapMaybe id -- catMaybes
+# foo = magic . isLeft $ fmap f x -- magic (isLeft x)
+# foo = (bar . baz . magic . isRight) (fmap f x) -- (bar . baz . magic) (isRight x)
 # main = print $ map (\_->5) [2,3,5] -- const 5
 # main = head $ drop n x -- x !! max 0 n
 # main = head $ drop (-3) x -- x
 # main = head $ drop 2 x -- x !! 2
+# main = foo . bar . baz . head $ drop 2 x -- (foo . bar . baz) (x !! 2)
 # main = drop 0 x -- x
 # main = take 0 x -- []
 # main = take (-5) x -- []
@@ -1056,8 +1067,8 @@
 # yes = baz baz >> return () -- Control.Monad.void (baz baz)
 # no = foo >>= bar >>= something >>= elsee >> return ()
 # no = f (#) x
-# data Pair = P {a :: !Int}; foo = return $! P{a=undefined}
-# data Pair = P {a :: !Int}; foo = return $! P undefined
+# data Pair = P {a : !Int}; foo = return $! P{a=undefined}
+# data Pair = P {a : !Int}; foo = return $! P undefined
 # foo = return $! Just undefined -- return (Just undefined)
 # foo = return $! (a,b) -- return (a,b)
 # foo = return $! 1
@@ -1083,8 +1094,8 @@
 # {-# LANGUAGE TypeApplications #-} \
 # foo = const @_ @SomeException
 # foo = id 12 -- 12
-# yes = foldr (\ curr acc -> (+ 1) curr : acc) [] -- map (\ curr -> (+ 1) curr)
-# yes = foldr (\ curr acc -> curr + curr : acc) [] -- map (\ curr -> curr + curr)
+# yes = foldr (\ curr acc -> (+ 1) curr :: acc) [] -- map (\ curr -> (+ 1) curr)
+# yes = foldr (\ curr acc -> curr + curr :: acc) [] -- map (\ curr -> curr + curr)
 # no = foo $ (,) x $ do {this is a test; and another test}
 # no = sequence (return x)
 # no = sequenceA (pure a)
@@ -1126,8 +1137,5 @@
 # no = sort <$> f input `shouldBe` sort <$> x
 # sortBy (comparing length) -- sortOn length
 # myJoin = on $ child ^. ChildParentId ==. parent ^. ParentId
-# @NoRefactor hlint bug: foo = typeRep (Proxy :: Proxy Foo Int) (missing brackets) \
-# foo = typeOf (undefined :: Foo Int) -- typeRep (Proxy :: Proxy (Foo Int))
-# foo = typeOf (undefined :: a) -- typeRep (Proxy :: Proxy a) @NoRefactor hlint bug: incorrect serialisation
-# {-# RULES "Id-fmap-id" forall (x :: Id a). fmap id x = x #-}
+# {-# RULES "Id-fmap-id" forall (x : Id a). fmap id x = x #-}
 # </TEST>

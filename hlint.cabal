@@ -60,11 +60,9 @@ library
         cpphs >= 1.20.1,
         cmdargs >= 0.10,
         yaml >= 0.5.0,
-        haskell-src-exts >= 1.21 && < 1.24,
-        haskell-src-exts-util >= 0.2.5,
         uniplate >= 1.5,
         ansi-terminal >= 0.6.2,
-        extra >= 1.6.19,
+        extra >= 1.7.1,
         refact >= 0.3,
         aeson >= 1.1.2.0,
         filepattern >= 0.1.1,
@@ -93,6 +91,8 @@ library
         Apply
         CmdLine
         Grep
+        Extension
+        Fixity
         HLint
         HsColour
         Idea
@@ -116,8 +116,6 @@ library
         GHC.Util.FreeVars
         GHC.Util.HsDecl
         GHC.Util.HsExpr
-        GHC.Util.HsType
-        GHC.Util.Pat
         GHC.Util.Module
         GHC.Util.Outputable
         GHC.Util.SrcLoc
@@ -127,10 +125,6 @@ library
         GHC.Util.Unify
 
         HSE.All
-        HSE.Match
-        HSE.Scope
-        HSE.Type
-        HSE.Util
         Hint.All
         Hint.Bracket
         Hint.Comment
@@ -151,7 +145,6 @@ library
         Hint.Smell
         Hint.Type
         Hint.Unsafe
-        Hint.Util
         Test.All
         Test.Annotations
         Test.InputOutput

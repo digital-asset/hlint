@@ -3,28 +3,28 @@
 
 {-
 map f [] = []
-map f (x:xs) = f x : map f xs
+map f (x::xs) = f x :: map f xs
 
 foldr f z [] = z
-foldr f z (x:xs) = f x (foldr f z xs)
+foldr f z (x::xs) = f x (foldr f z xs)
 
 foldl f z [] = z
-foldl f z (x:xs) = foldl f (f z x) xs
+foldl f z (x::xs) = foldl f (f z x) xs
 -}
 
 {-
 <TEST>
-f (x:xs) = negate x + f xs ; f [] = 0 -- f xs = foldr ((+) . negate) 0 xs
-f (x:xs) = x + 1 : f xs ; f [] = [] -- f xs = map (+ 1) xs
-f z (x:xs) = f (z*x) xs ; f z [] = z -- f z xs = foldl (*) z xs
-f a (x:xs) b = x + a + b : f a xs b ; f a [] b = [] -- f a xs b = map (\ x -> x + a + b) xs
-f [] a = return a ; f (x:xs) a = a + x >>= \fax -> f xs fax -- f xs a = foldM (+) a xs
-f (x:xs) a = a + x >>= \fax -> f xs fax ; f [] a = pure a -- f xs a = foldM (+) a xs
-foos [] x = x; foos (y:ys) x = foo y $ foos ys x -- foos ys x = foldr foo x ys
-f [] y = y; f (x:xs) y = f xs $ g x y -- f xs y = foldl (flip g) y xs
-f [] y = y; f (x : xs) y = let z = g x y in f xs z -- f xs y = foldl (flip g) y xs
-f [] y = y; f (x:xs) y = f xs (f xs z)
-fun [] = []; fun (x:xs) = f x xs ++ fun xs
+f (x::xs) = negate x + f xs ; f [] = 0 -- f xs = foldr ((+) . negate) 0 xs
+f (x::xs) = x + 1 :: f xs ; f [] = [] -- f xs = map (+ 1) xs
+f z (x::xs) = f (z*x) xs ; f z [] = z -- f z xs = foldl (*) z xs
+f a (x::xs) b = x + a + b :: f a xs b ; f a [] b = [] -- f a xs b = map (\ x -> x + a + b) xs
+f [] a = return a ; f (x::xs) a = a + x >>= \fax -> f xs fax -- f xs a = foldM (+) a xs
+f (x::xs) a = a + x >>= \fax -> f xs fax ; f [] a = pure a -- f xs a = foldM (+) a xs
+foos [] x = x; foos (y::ys) x = foo y $ foos ys x -- foos ys x = foldr foo x ys
+f [] y = y; f (x::xs) y = f xs $ g x y -- f xs y = foldl (flip g) y xs
+f [] y = y; f (x :: xs) y = let z = g x y in f xs z -- f xs y = foldl (flip g) y xs
+f [] y = y; f (x::xs) y = f xs (f xs z)
+fun [] = []; fun (x::xs) = f x xs ++ fun xs
 </TEST>
 -}
 
@@ -53,7 +53,8 @@ import OccName
 import BasicTypes
 
 import GHC.Util
-import Language.Haskell.GhclibParserEx.GHC.Hs.Expr
+import Language.Haskell.GhclibParserEx.GHC.Hs.Pat
+import Language.Haskell.GhclibParserEx.GHC.Hs.Expr hiding (varToStr)
 import Language.Haskell.GhclibParserEx.GHC.Hs.ExtendInstances
 
 listRecHint :: DeclHint'
@@ -67,7 +68,7 @@ listRecHint _ _ = concatMap f . universe
             guard $ recursiveStr `notElem` varss' y
             -- Maybe we can do better here maintaining source
             -- formatting?
-            return $ idea' severity ("Use " ++ use) o y [Replace Decl (toSS' o) [] (unsafePrettyPrint y)]
+            pure $ idea' severity ("Use " ++ use) o y [Replace Decl (toSS' o) [] (unsafePrettyPrint y)]
 
 recursiveStr :: String
 recursiveStr = "_recursive_"
@@ -99,7 +100,7 @@ data Branch =
 matchListRec :: ListCase -> Maybe (String, Severity, LHsExpr GhcPs)
 matchListRec o@(ListCase vs nil (x, xs, cons))
     -- Suggest 'map'?
-    | [] <- vs, varToStr nil == "[]", (LL _ (OpApp _ lhs c rhs)) <- cons, varToStr c == ":"
+    | [] <- vs, varToStr nil == "[]", (L _ (OpApp _ lhs c rhs)) <- cons, varToStr c == "::"
     , astEq (fromParen' rhs) recursive, xs `notElem` vars' lhs
     = Just $ (,,) "map" Hint.Type.Warning $
       appsBracket' [ strToVar "map", niceLambda' [x] lhs, strToVar xs]
@@ -110,14 +111,14 @@ matchListRec o@(ListCase vs nil (x, xs, cons))
     = Just $ (,,) "foldr" Suggestion $
       appsBracket' [ strToVar "foldr", niceLambda' [x] $ appsBracket' [op,lhs], nil, strToVar xs]
     -- Suggest 'foldl'?
-    | [v] <- vs, view' nil == Var_' v, (LL _ (HsApp _ r lhs)) <- cons
+    | [v] <- vs, view' nil == Var_' v, (L _ (HsApp _ r lhs)) <- cons
     , astEq (fromParen' r) recursive
     , xs `notElem` vars' lhs
     = Just $ (,,) "foldl" Suggestion $
       appsBracket' [ strToVar "foldl", niceLambda' [v,x] lhs, strToVar v, strToVar xs]
     -- Suggest 'foldM'?
-    | [v] <- vs, (LL _ (HsApp _ ret res)) <- nil, isReturn ret, varToStr res == "()" || view' res == Var_' v
-    , [LL _ (BindStmt _ (view' -> PVar_' b1) e _ _), LL _ (BodyStmt _ (fromParen' -> (LL _ (HsApp _ r (view' -> Var_' b2)))) _ _)] <- asDo cons
+    | [v] <- vs, (L _ (HsApp _ ret res)) <- nil, isReturn ret, varToStr res == "()" || view' res == Var_' v
+    , [L _ (BindStmt _ (view' -> PVar_' b1) e _ _), L _ (BodyStmt _ (fromParen' -> (L _ (HsApp _ r (view' -> Var_' b2)))) _ _)] <- asDo cons
     , b1 == b2, astEq r recursive, xs `notElem` vars' e
     , name <- "foldM" ++ ['_' | varToStr res == "()"]
     = Just $ (,,) name Suggestion $
@@ -130,18 +131,18 @@ matchListRec o@(ListCase vs nil (x, xs, cons))
 asDo :: LHsExpr GhcPs -> [LStmt GhcPs (LHsExpr GhcPs)]
 asDo (view' ->
        App2' bind lhs
-         (LL _ (HsLam _ MG {
+         (L _ (HsLam _ MG {
               mg_origin=FromSource
-            , mg_alts=LL _ [
-                 LL _ Match {  m_ctxt=LambdaExpr
+            , mg_alts=L _ [
+                 L _ Match {  m_ctxt=LambdaExpr
                             , m_pats=[LL _ v@VarPat{}]
                             , m_grhss=GRHSs _
-                                        [LL _ (GRHS _ [] rhs)]
-                                        (LL _ (EmptyLocalBinds _))}]}))
+                                        [L _ (GRHS _ [] rhs)]
+                                        (L _ (EmptyLocalBinds _))}]}))
       ) =
   [ noLoc $ BindStmt noExt v lhs noSyntaxExpr noSyntaxExpr
   , noLoc $ BodyStmt noExt rhs noSyntaxExpr noSyntaxExpr ]
-asDo (LL _ (HsDo _ DoExpr (LL _ stmts))) = stmts
+asDo (L _ (HsDo _ DoExpr (L _ stmts))) = stmts
 asDo x = [noLoc $ BodyStmt noExt x noSyntaxExpr noSyntaxExpr]
 
 
@@ -152,22 +153,22 @@ asDo x = [noLoc $ BodyStmt noExt x noSyntaxExpr noSyntaxExpr]
 findCase :: LHsDecl GhcPs -> Maybe (ListCase, LHsExpr GhcPs -> LHsDecl GhcPs)
 findCase x = do
   -- Match a function binding with two alternatives.
-  (LL _ (ValD _ FunBind {fun_matches=
+  (L _ (ValD _ FunBind {fun_matches=
               MG{mg_origin=FromSource, mg_alts=
-                     (LL _
-                            [ x1@(LL _ Match{..}) -- Match fields.
+                     (L _
+                            [ x1@(L _ Match{..}) -- Match fields.
                             , x2]), ..} -- Match group fields.
           , ..} -- Fun. bind fields.
-      )) <- return x
+      )) <- pure x
 
   Branch name1 ps1 p1 c1 b1 <- findBranch x1
   Branch name2 ps2 p2 c2 b2 <- findBranch x2
   guard (name1 == name2 && ps1 == ps2 && p1 == p2)
-  [(BNil, b1), (BCons x xs, b2)] <- return $ sortOn fst [(c1, b1), (c2, b2)]
+  [(BNil, b1), (BCons x xs, b2)] <- pure $ sortOn fst [(c1, b1), (c2, b2)]
   b2 <- transformAppsM' (delCons name1 p1 xs) b2
-  (ps, b2) <- return $ eliminateArgs ps1 b2
+  (ps, b2) <- pure $ eliminateArgs ps1 b2
 
-  let ps12 = let (a, b) = splitAt p1 ps1 in map strToPat' (a ++ xs : b) -- Function arguments.
+  let ps12 = let (a, b) = splitAt p1 ps1 in map strToPat (a ++ xs : b) -- Function arguments.
       emptyLocalBinds = noLoc $ EmptyLocalBinds noExt -- Empty where clause.
       gRHS e = noLoc $ GRHS noExt [] e :: LGRHS GhcPs (LHsExpr GhcPs) -- Guarded rhs.
       gRHSSs e = GRHSs noExt [gRHS e] emptyLocalBinds -- Guarded rhs set.
@@ -175,14 +176,14 @@ findCase x = do
       matchGroup e = MG{mg_alts=noLoc [noLoc $ match e], mg_origin=Generated, ..} -- Match group.
       funBind e = FunBind {fun_matches=matchGroup e, ..} :: HsBindLR GhcPs GhcPs -- Fun bind.
 
-  return (ListCase ps b1 (x, xs, b2), noLoc . ValD noExt . funBind)
+  pure (ListCase ps b1 (x, xs, b2), noLoc . ValD noExt . funBind)
 
 delCons :: String -> Int -> String -> LHsExpr GhcPs -> Maybe (LHsExpr GhcPs)
 delCons func pos var (fromApps' -> (view' -> Var_' x) : xs) | func == x = do
-    (pre, (view' -> Var_' v) : post) <- return $ splitAt pos xs
+    (pre, (view' -> Var_' v) : post) <- pure $ splitAt pos xs
     guard $ v == var
-    return $ apps' $ recursive : pre ++ post
-delCons _ _ _ x = return x
+    pure $ apps' $ recursive : pre ++ post
+delCons _ _ _ x = pure x
 
 eliminateArgs :: [String] -> LHsExpr GhcPs -> ([String], LHsExpr GhcPs)
 eliminateArgs ps cons = (remove ps, transform f cons)
@@ -207,17 +208,17 @@ findBranch (L _ x) = do
               GRHSs {grhssGRHSs=[L l (GRHS _ [] body)]
                         , grhssLocalBinds=L _ (EmptyLocalBinds _)
                         }
-            } <- return x
+            } <- pure x
   (a, b, c) <- findPat ps
-  return $ Branch (occNameString $rdrNameOcc name) a b c $ simplifyExp' body
+  pure $ Branch (occNameString $rdrNameOcc name) a b c $ simplifyExp' body
 
 findPat :: [LPat GhcPs] -> Maybe ([String], Int, BList)
 findPat ps = do
   ps <- mapM readPat ps
-  [i] <- return $ findIndices isRight ps
+  [i] <- pure $ findIndices isRight ps
   let (left, [right]) = partitionEithers ps
 
-  return (left, i, right)
+  pure (left, i, right)
 
 readPat :: Pat GhcPs -> Maybe (Either String BList)
 readPat (view' -> PVar_' x) = Just $ Left x

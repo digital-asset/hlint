@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
-{-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 module Test.All(test) where
 
@@ -19,13 +19,13 @@ import Config.Type
 import Config.Read
 import CmdLine
 import Refact
-import HSE.All
 import Hint.All
 import Test.Util
 import Test.InputOutput
 import Test.Annotations
 import Test.Translate
 import System.IO.Extra
+import GHC.Util.Outputable
 
 
 test :: Cmd -> ([String] -> IO ()) -> FilePath -> [FilePath] -> IO Int
@@ -34,14 +34,13 @@ test CmdTest{..} main dataDir files = do
 
     (failures, ideas) <- withBuffering stdout NoBuffering $ withTests $ do
         hasSrc <- liftIO $ doesFileExist "hlint.cabal"
-        useSrc <- return $ hasSrc && null files
-        testFiles <- if files /= [] then return files else do
+        let useSrc = hasSrc && null files
+        testFiles <- if files /= [] then pure files else do
             xs <- liftIO $ getDirectoryContents dataDir
-            return [dataDir </> x | x <- xs, takeExtension x `elem` [".hs",".yml",".yaml"]
-                                , not $ "HLint_" `isPrefixOf` takeBaseName x]
+            pure [dataDir </> x | x <- xs, takeExtension x `elem` [".yml",".yaml"]]
         testFiles <- liftIO $ forM testFiles $ \file -> do
             hints <- readFilesConfig [(file, Nothing)]
-            return (file, hints ++ (if takeBaseName file /= "Test" then [] else map (Builtin . fst) builtinHints))
+            pure (file, hints ++ (if takeBaseName file /= "Test" then [] else map (Builtin . fst) builtinHints))
         let wrap msg act = do liftIO $ putStr (msg ++ " "); act; liftIO $ putStrLn ""
 
         liftIO $ putStrLn "Testing"
@@ -68,8 +67,8 @@ test CmdTest{..} main dataDir files = do
     whenLoud $ mapM_ print ideas
     case rpath of
         Left refactorNotFound -> putStrLn $ unlines [refactorNotFound, "Refactoring tests skipped"]
-        _ -> return ()
-    return failures
+        _ -> pure ()
+    pure failures
 
 
 ---------------------------------------------------------------------
@@ -78,7 +77,7 @@ test CmdTest{..} main dataDir files = do
 -- Check all hints in the standard config files get sensible names
 testNames :: [Setting] -> Test ()
 testNames hints = sequence_
-    [ failed ["No name for the hint " ++ prettyPrint hintRuleLHS ++ " ==> " ++ prettyPrint hintRuleRHS]
+    [ failed ["No name for the hint " ++ unsafePrettyPrint hintRuleLHS ++ " ==> " ++ unsafePrettyPrint hintRuleRHS]
     | SettingMatchExp x@HintRule{..} <- hints, hintRuleName == defaultHintName]
 
 

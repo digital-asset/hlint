@@ -31,7 +31,7 @@
 
 module Hint.Pragma(pragmaHint) where
 
-import Hint.Type(ModuHint,ModuleEx(..),Idea(..),Severity(..),toSS',rawIdea',prettyExtension,glasgowExts)
+import Hint.Type(ModuHint,ModuleEx(..),Idea(..),Severity(..),toSS',rawIdea')
 import Data.List.Extra
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe
@@ -42,6 +42,7 @@ import ApiAnnotation
 import SrcLoc
 
 import GHC.Util
+import DynFlags
 
 pragmaHint :: ModuHint
 pragmaHint _ modu =
@@ -98,10 +99,10 @@ pragmaIdea pidea =
           mkLanguage = rawIdea' Hint.Type.Warning "Use LANGUAGE pragmas"
 
 languageDupes :: [(Located AnnotationComment, [String])] -> [Idea]
-languageDupes ( (a@(LL l _), les) : cs ) =
+languageDupes ( (a@(L l _), les) : cs ) =
   (if nubOrd les /= les
        then [pragmaIdea (SingleComment a (mkLangExts l $ nubOrd les))]
-       else [pragmaIdea (MultiComment a b (mkLangExts l (nubOrd $ les ++ les'))) | ( b@(LL _ _), les' ) <- cs, not $ disjoint les les']
+       else [pragmaIdea (MultiComment a b (mkLangExts l (nubOrd $ les ++ les'))) | ( b@(L _ _), les' ) <- cs, not $ disjoint les les']
   ) ++ languageDupes cs
 languageDupes _ = []
 
@@ -109,7 +110,7 @@ languageDupes _ = []
 strToLanguage :: String -> Maybe [String]
 strToLanguage "-cpp" = Just ["CPP"]
 strToLanguage x | "-X" `isPrefixOf` x = Just [drop 2 x]
-strToLanguage "-fglasgow-exts" = Just $ map prettyExtension glasgowExts
+strToLanguage "-fglasgow-exts" = Just $ map show glasgowExtsFlags
 strToLanguage _ = Nothing
 
 -- In 'optToLanguage p langexts', 'p' is an 'OPTIONS_GHC' pragma,
@@ -127,7 +128,7 @@ strToLanguage _ = Nothing
 optToLanguage :: (Located AnnotationComment, [String])
                -> [String]
                -> Maybe (Maybe (Located AnnotationComment), [String])
-optToLanguage (LL loc _, flags) langExts
+optToLanguage (L loc _, flags) langExts
   | any isJust vs =
       -- 'ls' is a list of language features enabled by this
       -- OPTIONS_GHC pragma that are not enabled by LANGUAGE pragmas

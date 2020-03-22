@@ -12,27 +12,29 @@ import Idea
 
 import qualified HsSyn as GHC
 import qualified BasicTypes as GHC
+import qualified Outputable
+import qualified ErrUtils
+import Lexer
 import Language.Haskell.GhclibParserEx.GHC.Hs.ExtendInstances
 import SrcLoc as GHC hiding (mkSrcSpan)
+import GHC.Util.DynFlags
+
 
 runGrep :: String -> ParseFlags -> [FilePath] -> IO ()
 runGrep patt flags files = do
-    exp <- case parseExp patt of
-        ParseOk x -> return x
-        ParseFailed sl msg ->
-            exitMessage $ (if "Parse error" `isPrefixOf` msg then msg else "Parse error in pattern: " ++ msg) ++ "\n" ++
-                          patt ++ "\n" ++
-                          replicate (srcColumn sl - 1) ' ' ++ "^"
-    let scope = scopeCreate $ Module an Nothing [] [] []
-    let unit = GHC.noLoc $ GHC.ExplicitTuple GHC.noExt [] GHC.Boxed
-    let rule = hintRules [HintRule Suggestion "grep" scope exp (Tuple an Boxed []) Nothing []
-                         -- Todo : Replace these with "proper" GHC expressions.
-                          (extendInstances mempty) (extendInstances unit) (extendInstances unit) Nothing]
+    exp <- case parseExpGhcWithMode (hseFlags flags) patt of
+        POk _ a -> pure a
+        PFailed _ loc err -> exitMessage $
+          let msg = Outputable.showSDoc baseDynFlags $
+                ErrUtils.pprLocErrMsg (ErrUtils.mkPlainErrMsg baseDynFlags loc err)
+          in "Failed to parse " ++ msg ++ ", when parsing:\n " ++ patt
+    let ghcUnit = GHC.noLoc $ GHC.ExplicitTuple GHC.noExt [] GHC.Boxed
+    let rule = hintRules [HintRule Suggestion "grep" [] mempty (extendInstances exp) (extendInstances ghcUnit) Nothing]
     forM_ files $ \file -> do
         res <- parseModuleEx flags file Nothing
         case res of
             Left (ParseError sl msg ctxt) ->
-                print $ rawIdeaN Error (if "Parse error" `isPrefixOf` msg then msg else "Parse error: " ++ msg) (mkSrcSpan sl sl) ctxt Nothing []
+                print $ rawIdeaN Error (if "Parse error" `isPrefixOf` msg then msg else "Parse error: " ++ msg) sl ctxt Nothing []
             Right m ->
                 forM_ (applyHints [] rule [m]) $ \i ->
                     print i{ideaHint="", ideaTo=Nothing}

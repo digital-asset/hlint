@@ -5,12 +5,13 @@ module Config.Type(
     defaultHintName, isUnifyVar, showNotes, getSeverity, getRestrictType, getSmellType
     ) where
 
-import HSE.All
 import Data.Char
 import Data.List.Extra
 import Prelude
 
+
 import qualified HsSyn
+import Fixity
 import GHC.Util
 import Language.Haskell.GhclibParserEx.GHC.Hs.ExtendInstances
 
@@ -94,16 +95,12 @@ data Classify = Classify
 data HintRule = HintRule
     {hintRuleSeverity :: Severity -- ^ Default severity for the hint.
     ,hintRuleName :: String -- ^ Name for the hint.
-    ,hintRuleScope :: Scope -- ^ Module scope in which the hint operates.
-    ,hintRuleLHS :: Exp SrcSpanInfo -- ^ LHS
-    ,hintRuleRHS :: Exp SrcSpanInfo -- ^ RHS
-    ,hintRuleSide :: Maybe (Exp SrcSpanInfo) -- ^ Side condition, typically specified with @where _ = ...@.
     ,hintRuleNotes :: [Note] -- ^ Notes about application of the hint.
+    ,hintRuleScope :: Scope -- ^ Module scope in which the hint operates (GHC parse tree).
     -- We wrap these GHC elements in 'HsExtendInstances' in order that we may derive 'Show'.
-    ,hintRuleGhcScope :: HsExtendInstances Scope' -- ^ Module scope in which the hint operates (GHC parse tree).
-    ,hintRuleGhcLHS :: HsExtendInstances (HsSyn.LHsExpr HsSyn.GhcPs) -- ^ LHS (GHC parse tree).
-    ,hintRuleGhcRHS :: HsExtendInstances (HsSyn.LHsExpr HsSyn.GhcPs) -- ^ RHS (GHC parse tree).
-    ,hintRuleGhcSide :: Maybe (HsExtendInstances (HsSyn.LHsExpr HsSyn.GhcPs))  -- ^ Side condition (GHC parse tree).
+    ,hintRuleLHS :: HsExtendInstances (HsSyn.LHsExpr HsSyn.GhcPs) -- ^ LHS (GHC parse tree).
+    ,hintRuleRHS :: HsExtendInstances (HsSyn.LHsExpr HsSyn.GhcPs) -- ^ RHS (GHC parse tree).
+    ,hintRuleSide :: Maybe (HsExtendInstances (HsSyn.LHsExpr HsSyn.GhcPs))  -- ^ Side condition (GHC parse tree).
     }
     deriving Show
 
@@ -136,5 +133,5 @@ data Setting
     | SettingArgument String -- ^ Extra command-line argument
     | SettingSmell SmellType Int
     | Builtin String -- use a builtin hint set
-    | Infix Fixity
+    | Infix FixityInfo
       deriving Show
