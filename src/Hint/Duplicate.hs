@@ -13,9 +13,9 @@ main = do (do b; a; a; a); do (do c; a; a; a) -- ??? @NoRefactor
 main = do a; a; a; b; a; a; a -- ??? @NoRefactor
 main = do a; a; a; b; a; a
 foo = a where {a = 1; b = 2; c = 3}; bar = a where {a = 1; b = 2; c = 3} -- ??? @NoRefactor
-{-# ANN main "HLint: ignore Reduce duplication" #-}; main = do a; a; a; a; a; a -- @Ignore ??? @NoRefactor
-{-# HLINT ignore main "Reduce duplication" #-}; main = do a; a; a; a; a; a -- @Ignore ??? @NoRefactor
-{- HLINT ignore main "Reduce duplication" -}; main = do a; a; a; a; a; a -- @Ignore ??? @NoRefactor
+{-# ANN main "DLint: ignore Reduce duplication" #-}; main = do a; a; a; a; a; a -- @Ignore ??? @NoRefactor
+{-# DLINT ignore main "Reduce duplication" #-}; main = do a; a; a; a; a; a -- @Ignore ??? @NoRefactor
+{- DLINT ignore main "Reduce duplication" -}; main = do a; a; a; a; a; a -- @Ignore ??? @NoRefactor
 </TEST>
 -}
 
