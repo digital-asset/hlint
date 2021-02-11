@@ -56,7 +56,7 @@ RUN tests/typesig-ignore.hs
 FILE tests/typesig-ignore.hs
 -- Bug #563
 module Foo(foobar) where
-{-# ANN foobar "HLint: ignore Use String" #-}
+{-# ANN foobar "DLint: ignore Use String" #-}
 
 foobar :: [Char]
 foobar = []
@@ -68,7 +68,7 @@ RUN tests/typesig-ignore2.hs
 FILE tests/typesig-ignore2.hs
 -- Bug #563
 module Foo(foobar) where
-{-# HLINT ignore foobar "Use String" #-}
+{-# DLINT ignore foobar "Use String" #-}
 
 foobar :: [Char]
 foobar = []

@@ -78,7 +78,7 @@ yes = (foo . bar x) <$> baz q -- foo . bar x <$> baz q @NoRefactor hlint bug: id
 no = foo . bar x <$> baz q
 
 -- annotations
-main = 1; {-# ANN module ("HLint: ignore Use camelCase" :: String) #-}
+main = 1; {-# ANN module ("DLint: ignore Use camelCase" :: String) #-}
 main = 1; {-# ANN module (1 + (2)) #-} -- 2
 
 -- special case from esqueleto, see #224

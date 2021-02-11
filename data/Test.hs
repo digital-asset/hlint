@@ -23,11 +23,11 @@ warn = ignoreTest3
 suggest = ignoreTest4
 ignore = Ignore_Test
 
-{-# ANN module "HLint: ignore Test4" #-}
+{-# ANN module "DLint: ignore Test4" #-}
 {-# ANN annTest2 "HLint: error" #-}
 {-# ANN annTest3 ("HLint: warn" :: String) #-}
 {-# ANN annTest4 ("HLint: suggest" :: String) #-}
-{-# ANN type Ann_Test ("HLint: ignore") #-}
+{-# ANN type Ann_Test ("DLint: ignore") #-}
 
 
 error = concat (map f x) ==> Data.List.concatMap f x
@@ -99,16 +99,16 @@ zip [1..length x]
 zip [1..length x] x -- zipFrom 1 x
 test = 5 + 0 -- 5
 
-{-# ANN module "HLint: ignore Unused LANGUAGE pragma" #-} \
+{-# ANN module "DLint: ignore Unused LANGUAGE pragma" #-} \
 {-# LANGUAGE RecordWildCards #-} -- @Ignore ???
 
-{-# ANN module "HLint: ignore Unused LANGUAGE pragma" #-} \
+{-# ANN module "DLint: ignore Unused LANGUAGE pragma" #-} \
 {-# LANGUAGE RecordWildCards #-} -- @Ignore ???
 
-{-# ANN lam "HLint: ignore Redundant lambda" #-} \
+{-# ANN lam "DLint: ignore Redundant lambda" #-} \
 lam = \x -> x x x -- @Ignore ???
 
-{-# ANN module "HLint: ignore Reduce duplication" #-} \
+{-# ANN module "DLint: ignore Reduce duplication" #-} \
 dup = do a; a; a; a; a; a -- @Ignore ???
 
 </TEST>

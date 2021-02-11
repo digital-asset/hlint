@@ -26,8 +26,8 @@ import OccName
 import Outputable
 
 
--- | Read an {-# ANN #-} pragma and determine if it is intended for HLint.
---   Return Nothing if it is not an HLint pragma, otherwise what it means.
+-- | Read an {-# ANN #-} pragma and determine if it is intended for Dlint.
+--   Return Nothing if it is not an Dlint pragma, otherwise what it means.
 readPragma :: AnnDecl GhcPs -> Maybe Classify
 readPragma (HsAnnotation _ _ provenance expr) = f expr
     where
@@ -36,7 +36,7 @@ readPragma (HsAnnotation _ _ provenance expr) = f expr
             TypeAnnProvenance (L _ x) -> occNameString $ occName x
             ModuleAnnProvenance -> ""
 
-        f (L _ (HsLit _ (HsString _ (unpackFS -> s)))) | "hlint:" `isPrefixOf` lower s =
+        f (L _ (HsLit _ (HsString _ (unpackFS -> s)))) | "dlint:" `isPrefixOf` lower s =
                 case getSeverity a of
                     Nothing -> errorOn expr "bad classify pragma"
                     Just severity -> Just $ Classify severity (trimStart b) "" name
@@ -50,8 +50,8 @@ readComment :: GHC.Located AnnotationComment -> [Classify]
 readComment c@(L pos AnnBlockComment{})
     | (hash, x) <- maybe (False, x) (True,) $ stripPrefix "#" x
     , x <- trim x
-    , (hlint, x) <- word1 x
-    , lower hlint == "hlint"
+    , (dlint, x) <- word1 x
+    , lower dlint == "dlint"
     = f hash x
     where
         x = commentText c
@@ -62,7 +62,7 @@ readComment c@(L pos AnnBlockComment{})
             , (things, x) <- g x
             , Just hint <- if x == "" then Just "" else readMaybe x
             = map (Classify sev hint "") $ ["" | null things] ++ things
-        f hash _ = errorOnComment c $ "bad HLINT pragma, expected:\n    {-" ++ h ++ " HLINT <severity> <identifier> \"Hint name\" " ++ h ++ "-}"
+        f hash _ = errorOnComment c $ "bad DLINT pragma, expected:\n    {-" ++ h ++ " DLINT <severity> <identifier> \"Hint name\" " ++ h ++ "-}"
             where h = ['#' | hash]
 
         g x | (s, x) <- word1 x

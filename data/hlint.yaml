@@ -1055,8 +1055,8 @@
 # main = map $ \ d -> ([| $d |], [| $d |]) @NoRefactor: apply-refact requires TemplateHaskell pragma
 # {-# LANGUAGE TemplateHaskell #-}; main = map $ \ d -> ([| $d |], [| $d |])
 # pairs (x:xs) = map (x,) xs ++ pairs xs
-# {-# ANN foo "HLint: ignore" #-};foo = map f (map g x) -- @Ignore ???
-# {-# HLINT ignore foo #-};foo = map f (map g x) -- @Ignore ???
+# {-# ANN foo "DLint: ignore" #-};foo = map f (map g x) -- @Ignore ???
+# {-# DLINT ignore foo #-};foo = map f (map g x) -- @Ignore ???
 # yes = fmap lines $ abc 123 -- lines Control.Applicative.<$> abc 123
 # no = fmap lines $ abc $ def 123
 # test = foo . not . not -- id
