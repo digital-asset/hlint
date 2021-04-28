@@ -107,7 +107,8 @@ instance FreeVars' (LHsExpr GhcPs) where
   freeVars' (dL -> L _ (HsLet _ binds e)) = inFree' binds e -- Let (rec).
   freeVars' (dL -> L _ (HsDo _ ctxt (dL -> L _ stmts))) = free' (allVars' stmts) -- Do block.
   freeVars' (dL -> L _ (RecordCon _ _ (HsRecFields flds _))) = Set.unions $ map freeVars' flds -- Record construction.
-  freeVars' (dL -> L _ (RecordUpd _ e flds)) = Set.unions $ freeVars' e : map freeVars' flds -- Record update.
+  freeVars' (dL -> L _ (RecordUpd _ e (Left flds))) = Set.unions $ freeVars' e : map freeVars' flds -- Record update.
+  freeVars' (dL -> L _ (RecordUpd _ e (Right ps))) = Set.unions $ freeVars' e : map freeVars' ps -- Record update projection.
   freeVars' (dL -> L _ (HsMultiIf _ grhss)) = free' (allVars' grhss) -- Multi-way if.
 
   freeVars' (dL -> L _ HsConLikeOut{}) = mempty -- After typechecker.
@@ -158,6 +159,9 @@ instance FreeVars' (LHsRecField GhcPs (LHsExpr GhcPs)) where
    freeVars' (dL -> L _ (HsRecField _ x _)) = freeVars' x
 
 instance FreeVars' (LHsRecUpdField GhcPs) where
+  freeVars' (dL -> L _ (HsRecField _ x _)) = freeVars' x
+
+instance FreeVars' (LHsRecUpdProj GhcPs) where
   freeVars' (dL -> L _ (HsRecField _ x _)) = freeVars' x
 
 instance AllVars' (LPat GhcPs) where

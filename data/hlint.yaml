@@ -1025,7 +1025,7 @@
 # no = x ^^ 18.5
 # instance Arrow (->) where first f = f *** id
 # yes = fromInteger 12 -- 12
-# import Prelude hiding (catch); no = catch
+# import Prelude hiding (print); no = print
 # import Control.Exception as E; no = E.catch
 # main = do f; putStrLn $ show x -- print x
 # main = map (writer,) $ map arcObj $ filter (rdfPredEq (Res dctreferences)) ts -- map ((writer,) . arcObj) (filter (rdfPredEq (Res dctreferences)) ts)
