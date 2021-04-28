@@ -1,7 +1,7 @@
 resolver: nightly-2021-01-05 # ghc 8.10.3
 packages: [.]
 extra-deps:
-  - archive: https://daml-binaries.da-ext.net/da-ghc-lib/ghc-lib-parser-927591afb5343097516894c6163a6df7.tar.gz
+  - archive: https://daml-binaries.da-ext.net/da-ghc-lib/ghc-lib-parser-369086ffb2f33597c132bd2d0fc0e163.tar.gz
   - ghc-lib-parser-ex-8.8.5.8
 ghc-options:
     "$locals": -Wunused-imports -Worphans -Wunused-top-binds -Wunused-local-binds -Wincomplete-patterns
