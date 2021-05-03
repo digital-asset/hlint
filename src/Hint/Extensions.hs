@@ -378,7 +378,7 @@ used TypeOperators = hasS tyOpInSig ||^ hasS tyOpInDecl
       (c:_) -> not $ isAlpha c || c == '_'
       _ -> False
 used RecordWildCards = hasS hasFieldsDotDot ||^ hasS hasPFieldsDotDot
-used RecordPuns = hasS isPFieldPun ||^ hasS isFieldPun ||^ hasS isFieldPunUpdate
+used RecordPuns = hasS isPFieldPun ||^ hasS isFieldPun ||^ hasS isFieldPunUpdate ||^ hasS isFieldPunUpdate'
 used UnboxedTuples = hasS isUnboxedTuple ||^ hasS (== Unboxed) ||^ hasS isDeriving
     where
         -- detect if there are deriving declarations or data ... deriving stuff
@@ -511,3 +511,7 @@ isWholeFrac _ = False
 -- Field puns in updates have a different type to field puns in constructions
 isFieldPunUpdate :: HsRecField' (AmbiguousFieldOcc GhcPs) (LHsExpr GhcPs) -> Bool
 isFieldPunUpdate = \case HsRecField {hsRecPun=True} -> True; _ -> False
+
+-- Field puns for record dot updates
+isFieldPunUpdate' :: HsRecField' FieldLabelStrings (LHsExpr GhcPs) -> Bool
+isFieldPunUpdate' = \case HsRecField {hsRecPun=True} -> True; _ -> False
