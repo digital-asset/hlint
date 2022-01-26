@@ -19,7 +19,7 @@ strategy:
       image: "ubuntu-20.04"
       stack-yaml: "stack.yaml"
     windows-ghc-lib-881-8103:
-      image: "vs2017-win2016"
+      image: "windows-2022"
       stack-yaml: "stack.yaml"
     mac-ghc-lib-881-8103:
       image: macos-10.15
