@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings, ViewPatterns, RecordWildCards, GeneralizedNewtypeDeriving, TupleSections #-}
 
@@ -8,6 +9,10 @@ module Config.Yaml(
     ) where
 
 import Config.Type
+
+#if MIN_VERSION_aeson(2,0,0)
+import qualified Data.Aeson.KeyMap as KM
+#endif
 import Data.Yaml
 import Data.Either
 import Data.Maybe
@@ -110,7 +115,12 @@ parseArray v@(getVal -> Array xs) = concatMapM parseArray $ zipWithFrom (\i x ->
 parseArray v = pure [v]
 
 parseObject :: Val -> Parser (Map.HashMap T.Text Value)
-parseObject (getVal -> Object x) = pure x
+parseObject (getVal -> Object x) =
+#if MIN_VERSION_aeson(2,0,0)
+    pure (KM.toHashMapText x)
+#else
+    pure x
+#endif
 parseObject v = parseFail v "Expected an Object"
 
 parseObject1 :: Val -> Parser (String, Val)

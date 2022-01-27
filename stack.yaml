@@ -1,8 +1,17 @@
-resolver: nightly-2021-04-28 # ghc 8.10.3
+resolver: lts-18.23
 packages: [.]
 extra-deps:
   - archive: https://daml-binaries.da-ext.net/da-ghc-lib/ghc-lib-parser-8965d0e9ecbaf64ebbd324b651691f65.tar.gz
   - ghc-lib-parser-ex-8.8.5.8
+  # We don’t upgrade to a new snapshot yet to still use GHC 8.10.7
+  # Once the Daml repo is on GHC 9.0 we can go to the latest nightly and drop these.
+  - aeson-2.0.3.0
+  - OneTuple-0.3.1
+  - attoparsec-0.14.4
+  - hashable-1.4.0.2
+  - semialign-1.2.0.1
+  - text-short-0.1.5
+  - time-compat-1.9.6.1
 ghc-options:
     "$locals": -Wunused-imports -Worphans -Wunused-top-binds -Wunused-local-binds -Wincomplete-patterns
 flags:
